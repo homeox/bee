@@ -36,7 +36,7 @@
   ];
 
   const state = {
-    width: 0, height: 0, dpr: 1, running: false, paused: false, lastTime: 0, elapsed: 0,
+    width: 0, height: 0, dpr: 1, running: false, demo: false, paused: false, lastTime: 0, elapsed: 0,
     score: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
     flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], particles: [],
@@ -173,9 +173,14 @@
     }
   }
 
-  function beginGame() {
-    unlockAudio();
-    state.running = true; state.paused = false; state.elapsed = 0; state.score = 0; state.lives = 3;
+  function clearControls() {
+    for (const key of Object.keys(state.keys)) state.keys[key] = false;
+    for (const button of document.querySelectorAll('[data-control]')) button.classList.remove('active');
+  }
+
+  function resetSession(demo) {
+    clearControls();
+    state.demo = demo; state.running = !demo; state.paused = false; state.elapsed = 0; state.score = 0; state.lives = 3;
     state.day = TUNING.dev.startDay; state.dayNectar = 0; state.dayGoal = 4 + state.day * 2;
     state.wasps = []; state.dragonflies = []; state.particles = [];
     state.guards = [makeGuard(0), makeGuard(1)]; state.guardRespawns = [];
@@ -183,9 +188,20 @@
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
-    startPanel.classList.remove('visible'); overPanel.classList.remove('visible'); pauseLabel.classList.remove('visible');
-    showHint('FOLLOW THE FLOWER MARKERS', 3.5); updateHud(); state.lastTime = performance.now();
-    soundDay();
+    startPanel.classList.toggle('visible', demo); overPanel.classList.remove('visible'); pauseLabel.classList.remove('visible');
+    progressEl.classList.remove('visible'); hintEl.classList.remove('visible');
+    if (!demo) { showHint('FOLLOW THE FLOWER MARKERS', 3.5); soundDay(); }
+    updateHud(); state.lastTime = performance.now();
+  }
+
+  function beginGame() {
+    unlockAudio();
+    resetSession(false);
+  }
+
+  function beginDemo() {
+    updateWingSound(false);
+    resetSession(true);
   }
 
   function nextDay() {
@@ -302,6 +318,52 @@
     updateCamera(dt);
     updateLanding(dt);
     updateWingSound(drive !== 0 && !bee.landing);
+  }
+
+  function updateDemoAI() {
+    if (!state.demo || !state.bee) return;
+    const bee = state.bee;
+    state.keys.left = false; state.keys.right = false; state.keys.thrust = false;
+    state.keys.reverse = false; state.keys.land = false;
+    const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
+    let threat = null, threatDistance = Infinity;
+    for (const enemy of enemies) {
+      const d = distance(bee, enemy);
+      if (d < threatDistance) { threatDistance = d; threat = enemy; }
+    }
+
+    let target, targetKind;
+    if (threat && threatDistance < 205) {
+      target = threat; targetKind = 'enemy';
+    } else if (bee.nectar >= TUNING.balance.nectarCapacity) {
+      target = { x: 0, y: 0 }; targetKind = 'hive';
+    } else {
+      const flowers = state.flowers.filter(flower => flower.cooldown <= 0);
+      target = flowers.sort((a, b) => distance(bee, a) - distance(bee, b))[0] || { x: 0, y: 0 };
+      targetKind = target.type ? 'flower' : 'hive';
+    }
+
+    const toTarget = Math.atan2(target.y - bee.y, target.x - bee.x);
+    const desiredAngle = targetKind === 'enemy' ? toTarget + Math.PI : toTarget;
+    const turnError = angleDelta(bee.angle, desiredAngle);
+    state.keys.left = turnError < -.055;
+    state.keys.right = turnError > .055;
+    const d = distance(bee, target), speed = Math.hypot(bee.vx, bee.vy);
+
+    if (targetKind === 'enemy') {
+      state.keys.reverse = Math.abs(turnError) < .42 && d < 185;
+      state.keys.thrust = !state.keys.reverse && d > 125 && Math.abs(turnError) < .7;
+      return;
+    }
+
+    const landingRange = targetKind === 'hive' ? 108 : target.size + 36;
+    if (d < landingRange + 75) {
+      if (speed > 48) state.keys.reverse = Math.abs(turnError) < .58;
+      else if (d < landingRange) state.keys.land = true;
+      else state.keys.thrust = Math.abs(turnError) < .42;
+    } else {
+      state.keys.thrust = Math.abs(turnError) < .72;
+    }
   }
 
   function landingCandidate() {
@@ -539,7 +601,10 @@
     state.bee.nectar = Math.max(0, state.bee.nectar - 1);
     state.shake = 14; state.flash = .3;
     burst(state.bee.x, state.bee.y, '#f5b51e', 28, 200); soundHurt(); updateHud();
-    if (state.lives <= 0) gameOver();
+    if (state.lives <= 0) {
+      if (state.demo) beginDemo();
+      else gameOver();
+    }
     else showHint('OUCH! YOU DROPPED SOME NECTAR', 1.7);
   }
 
@@ -767,7 +832,7 @@
     for (const guard of state.guards) drawGuard(guard);
     drawParticles();
     if (state.bee) drawBee(state.bee);
-    if (state.running) drawMarkers();
+    if (state.running || state.demo) drawMarkers();
     ctx.restore();
     if (state.flash > 0) { ctx.fillStyle = `rgba(255,244,198,${state.flash})`; ctx.fillRect(0, 0, state.width, state.height); }
   }
@@ -775,7 +840,10 @@
   function frame(time) {
     const dt = Math.min(.033, Math.max(0, (time - state.lastTime) / 1000 || 0));
     state.lastTime = time;
-    if (state.running && !state.paused) update(dt);
+    if ((state.running || state.demo) && !state.paused) {
+      if (state.demo) updateDemoAI();
+      update(dt);
+    }
     render(); requestAnimationFrame(frame);
   }
 
@@ -875,7 +943,7 @@
   addEventListener('resize', resize);
   if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 
-  resize(); state.bee = makeBee(); centerCamera(); populateMeadow(); updateHud();
-  window.__BEE_DEBUG__ = { state, beginGame, spawnWasp, spawnDragonfly, nextDay, landingCandidate, update, TUNING };
+  resize(); beginDemo();
+  window.__BEE_DEBUG__ = { state, beginGame, beginDemo, updateDemoAI, spawnWasp, spawnDragonfly, nextDay, landingCandidate, update, TUNING };
   requestAnimationFrame(frame);
 })();

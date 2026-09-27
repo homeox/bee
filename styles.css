@@ -69,7 +69,11 @@ html, body {
 }
 .panel.visible { display: flex; animation: reveal .4s ease-out; }
 @keyframes reveal { from { opacity: 0; transform: scale(.98); } }
+#start-panel { background: radial-gradient(circle at 50% 48%, rgba(255,247,199,.7) 0, rgba(255,247,199,.46) 25%, rgba(21,75,39,.22) 70%, rgba(21,75,39,.42) 100%); backdrop-filter: blur(.7px); }
 .eyebrow { margin: 0 0 10px; color: #31582f; font-size: 10px; font-weight: 800; letter-spacing: .2em; }
+.demo-label { display: flex; align-items: center; gap: 7px; margin: 0 0 18px; padding: 6px 10px; border-radius: 999px; color: #f9ffe9; background: rgba(26,83,42,.76); box-shadow: 0 3px 12px rgba(25,57,30,.18); font-size: 8px; font-weight: 800; letter-spacing: .13em; }
+.demo-label i { width: 7px; height: 7px; border-radius: 50%; background: #ffe253; box-shadow: 0 0 0 4px rgba(255,226,83,.18); animation: livePulse 1.3s ease-in-out infinite; }
+@keyframes livePulse { 50% { opacity: .45; transform: scale(.72); } }
 h1, h2 { margin: 0; color: #ffc928; font: 800 clamp(96px, 24vw, 220px)/.66 "Baloo 2", sans-serif; letter-spacing: -.06em; -webkit-text-stroke: 3px #392c15; text-shadow: 0 8px 0 #c37c09, 0 18px 40px rgba(54,48,17,.25); }
 h2 { color: #fff0ac; font-size: clamp(54px, 12vw, 104px); line-height: .77; }
 .tagline { margin: 42px 0 22px; color: #254a2d; font-size: 12px; font-weight: 800; line-height: 1.65; letter-spacing: .04em; }

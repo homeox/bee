@@ -6,6 +6,8 @@ The meadow becomes more dangerous each day. Wasps pursue the player, dragonflies
 
 The compact procedural soundscape uses a filtered, low-volume wing flutter plus soft puffs and bell-like meadow cues. It remains fully offline and adds no downloaded audio assets.
 
+The lobby doubles as a live attract mode: an AI-controlled bee plays the complete foraging loop behind the title screen, including flower landings, hive deliveries, evasive flying, and automatic reverse attacks. Starting the game resets the demo and hands over fresh controls.
+
 ## Play locally
 
 Serve this folder with any static web server:
