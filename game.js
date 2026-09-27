@@ -43,7 +43,7 @@
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0, actionTarget: null, actionTime: 0,
-    audio: null, wingOsc: null, wingGain: null
+    audio: null, wingOsc: null, wingOsc2: null, wingGain: null, wingFilter: null, wingActive: false
   };
 
   const random = (min, max) => min + Math.random() * (max - min);
@@ -784,37 +784,67 @@
     const AudioContext = window.AudioContext || window.webkitAudioContext;
     if (!AudioContext) return;
     state.audio = new AudioContext();
-    state.wingOsc = state.audio.createOscillator(); state.wingGain = state.audio.createGain();
-    state.wingOsc.type = 'sawtooth'; state.wingOsc.frequency.value = 95; state.wingGain.gain.value = 0;
-    state.wingOsc.connect(state.wingGain).connect(state.audio.destination); state.wingOsc.start();
+    state.wingOsc = state.audio.createOscillator(); state.wingOsc2 = state.audio.createOscillator();
+    state.wingGain = state.audio.createGain(); state.wingFilter = state.audio.createBiquadFilter();
+    state.wingOsc.type = 'triangle'; state.wingOsc.frequency.value = 86;
+    state.wingOsc2.type = 'sine'; state.wingOsc2.frequency.value = 129;
+    state.wingOsc2.detune.value = 7;
+    state.wingGain.gain.value = .0001;
+    state.wingFilter.type = 'lowpass'; state.wingFilter.frequency.value = 360; state.wingFilter.Q.value = .7;
+    state.wingOsc.connect(state.wingGain); state.wingOsc2.connect(state.wingGain);
+    state.wingGain.connect(state.wingFilter).connect(state.audio.destination);
+    state.wingOsc.start(); state.wingOsc2.start();
   }
 
-  function tone(freq, duration, type = 'sine', volume = .04, slide = 1) {
+  function tone(freq, duration, type = 'sine', volume = .025, slide = 1, delay = 0) {
     if (!state.audio) return;
-    const now = state.audio.currentTime, oscillator = state.audio.createOscillator(), gain = state.audio.createGain();
+    const now = state.audio.currentTime + delay, oscillator = state.audio.createOscillator(), gain = state.audio.createGain();
     oscillator.type = type; oscillator.frequency.setValueAtTime(freq, now); oscillator.frequency.exponentialRampToValueAtTime(Math.max(30, freq * slide), now + duration);
-    gain.gain.setValueAtTime(volume, now); gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
-    oscillator.connect(gain).connect(state.audio.destination); oscillator.start(now); oscillator.stop(now + duration);
+    gain.gain.setValueAtTime(.0001, now);
+    gain.gain.exponentialRampToValueAtTime(volume, now + Math.min(.018, duration * .16));
+    gain.gain.exponentialRampToValueAtTime(.0001, now + duration);
+    oscillator.connect(gain).connect(state.audio.destination); oscillator.start(now); oscillator.stop(now + duration + .02);
+  }
+
+  function bell(freq, duration = .34, volume = .025, delay = 0) {
+    tone(freq, duration, 'sine', volume, .997, delay);
+    tone(freq * 2.01, duration * .62, 'sine', volume * .26, 1, delay);
+    tone(freq * 3.02, duration * .38, 'sine', volume * .09, 1, delay);
+  }
+
+  function puff(duration = .12, volume = .012, cutoff = 620) {
+    if (!state.audio?.createBuffer || !state.audio?.createBufferSource || !state.audio?.createBiquadFilter) return;
+    const length = Math.max(1, Math.floor(state.audio.sampleRate * duration));
+    const buffer = state.audio.createBuffer(1, length, state.audio.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 2.2);
+    const source = state.audio.createBufferSource(), filter = state.audio.createBiquadFilter(), gain = state.audio.createGain();
+    source.buffer = buffer; filter.type = 'lowpass'; filter.frequency.value = cutoff; filter.Q.value = .5; gain.gain.value = volume;
+    source.connect(filter).connect(gain).connect(state.audio.destination); source.start();
   }
 
   function updateWingSound(active) {
-    if (!state.audio || !state.wingGain) return;
+    if (!state.audio || !state.wingGain || state.wingActive === active) return;
+    state.wingActive = active;
     const now = state.audio.currentTime;
-    state.wingGain.gain.cancelScheduledValues(now); state.wingGain.gain.linearRampToValueAtTime(active ? .022 : .004, now + .08);
-    state.wingOsc.frequency.linearRampToValueAtTime(active ? 128 : 92, now + .08);
+    state.wingGain.gain.cancelScheduledValues(now);
+    state.wingGain.gain.setValueAtTime(Math.max(.0001, state.wingGain.gain.value), now);
+    state.wingGain.gain.linearRampToValueAtTime(active ? .0075 : .0001, now + (active ? .16 : .24));
+    state.wingOsc.frequency.linearRampToValueAtTime(active ? 104 : 86, now + .2);
+    state.wingOsc2.frequency.linearRampToValueAtTime(active ? 156 : 129, now + .2);
   }
-  const soundReverseBurst = () => { tone(420, .1, 'square', .026, .7); tone(720, .08, 'triangle', .016, .75); };
-  const soundHit = () => tone(210, .08, 'square', .04, .55);
-  const soundEnemyDown = () => { tone(260, .2, 'sawtooth', .05, .3); tone(520, .16, 'triangle', .025, .5); };
-  const soundCollect = () => { tone(660, .13, 'sine', .04, 1.5); setTimeout(() => tone(940, .15, 'sine', .035, 1.25), 70); };
-  const soundDeposit = () => { tone(330, .25, 'triangle', .05, 2); setTimeout(() => tone(660, .25, 'sine', .04, 1.5), 90); };
-  const soundLand = () => tone(160, .12, 'sine', .025, .7);
-  const soundAlert = freq => { tone(freq, .24, 'sawtooth', .035, .65); setTimeout(() => tone(freq * .9, .2, 'square', .025, .65), 140); };
-  const soundSwoop = () => tone(310, .36, 'sawtooth', .035, .24);
-  const soundHurt = () => { tone(170, .35, 'square', .06, .25); tone(95, .42, 'sawtooth', .04, .5); };
-  const soundDay = () => { tone(330, .3, 'sine', .035, 1.5); setTimeout(() => tone(495, .35, 'triangle', .04, 1.35), 120); };
-  const soundGuardDown = () => { tone(240, .26, 'triangle', .04, .35); tone(120, .32, 'sine', .025, .5); };
-  const soundGuardReturn = () => { tone(520, .18, 'sine', .035, 1.45); setTimeout(() => tone(760, .2, 'triangle', .025, 1.2), 80); };
+  const soundReverseBurst = () => { puff(.1, .009, 760); tone(310, .14, 'triangle', .014, 1.18); bell(620, .13, .009, .035); };
+  const soundHit = () => { puff(.09, .014, 480); tone(185, .11, 'sine', .02, .62); bell(510, .09, .009, .015); };
+  const soundEnemyDown = () => { puff(.18, .015, 520); bell(430, .22, .019); bell(645, .26, .016, .08); };
+  const soundCollect = () => { bell(659, .28, .027); bell(988, .32, .022, .075); };
+  const soundDeposit = () => { bell(392, .35, .025); bell(523, .38, .025, .085); bell(784, .42, .021, .17); };
+  const soundLand = () => { puff(.16, .009, 410); tone(210, .14, 'sine', .012, .82); };
+  const soundAlert = freq => { bell(Math.max(320, freq * 1.6), .2, .017); bell(Math.max(280, freq * 1.35), .22, .014, .13); };
+  const soundSwoop = () => { puff(.28, .012, 900); tone(460, .32, 'triangle', .015, .42); };
+  const soundHurt = () => { puff(.2, .016, 350); tone(245, .3, 'sine', .027, .58); tone(370, .18, 'triangle', .012, .7, .04); };
+  const soundDay = () => { bell(392, .38, .022); bell(523, .4, .022, .1); bell(659, .44, .022, .2); bell(784, .48, .019, .31); };
+  const soundGuardDown = () => { bell(392, .3, .018); bell(294, .4, .017, .1); puff(.18, .008, 360); };
+  const soundGuardReturn = () => { bell(523, .3, .02); bell(659, .34, .019, .08); bell(880, .4, .016, .16); };
 
   function togglePause() {
     if (!state.running) return;

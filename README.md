@@ -4,6 +4,8 @@
 
 The meadow becomes more dangerous each day. Wasps pursue the player, dragonflies make fast attack runs, spiders guard slowing webs, and flowers deplete and regrow. Combat is deliberately simple: reverse into a predator and the bee automatically extends its rear stinger. Two friendly hive guards patrol home, fight nearby enemies, take damage, and respawn from the hive if defeated.
 
+The compact procedural soundscape uses a filtered, low-volume wing flutter plus soft puffs and bell-like meadow cues. It remains fully offline and adds no downloaded audio assets.
+
 ## Play locally
 
 Serve this folder with any static web server:
