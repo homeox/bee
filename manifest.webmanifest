@@ -1,0 +1,10 @@
+{
+  "name": "Bee",
+  "short_name": "Bee",
+  "description": "A top-down meadow foraging adventure.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#285f35",
+  "theme_color": "#f5b800",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

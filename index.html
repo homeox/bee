@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#f5b800">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Bee</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main id="game-shell">
+    <canvas id="game" aria-label="Bee top-down foraging game"></canvas>
+
+    <header class="hud" aria-live="polite">
+      <section class="hud-block">
+        <span class="hud-label">NECTAR BANKED</span>
+        <strong id="score">000</strong>
+      </section>
+      <section class="hud-title"><span>🐝</span> BEE</section>
+      <section class="hud-block hud-right">
+        <span class="hud-label">NECTAR CARRIED</span>
+        <strong id="nectar">○ ○ ○</strong>
+      </section>
+    </header>
+
+    <div class="status-row">
+      <div id="lives" class="lives" aria-label="3 lives"></div>
+      <div id="day" class="day">DAY 01 · GOAL 0/6</div>
+    </div>
+
+    <div id="hint" class="hint">FOLLOW THE FLOWER MARKERS</div>
+    <div id="action-progress" class="action-progress"><i></i><span></span></div>
+
+    <section id="start-panel" class="panel visible">
+      <p class="eyebrow">A TINY WORLD · A BIG JOB</p>
+      <h1>BEE</h1>
+      <p class="tagline">Find flowers. Land gently. Gather nectar.<br>Bring it home to the hive.</p>
+      <button id="start-button" class="primary-button">LEAVE THE HIVE</button>
+      <div class="instructions">
+        <span><kbd>←</kbd><kbd>→</kbd> TURN</span>
+        <span><kbd>↑</kbd> FLY</span>
+        <span><kbd>SPACE</kbd> LAND</span>
+        <span><kbd>E</kbd> STING</span>
+      </div>
+    </section>
+
+    <section id="game-over-panel" class="panel">
+      <p class="eyebrow">THE MEADOW GOT THE BETTER OF YOU</p>
+      <h2>BACK TO<br>THE HIVE</h2>
+      <p class="final-score">NECTAR BANKED <strong id="final-score">0</strong></p>
+      <p id="new-best" class="new-best">NEW COLONY RECORD</p>
+      <button id="restart-button" class="primary-button">TRY AGAIN</button>
+    </section>
+
+    <button id="pause-button" class="icon-button" aria-label="Pause game">Ⅱ</button>
+    <div id="pause-label" class="pause-label">PAUSED</div>
+
+    <aside id="dev-panel" class="dev-panel" aria-label="Developer configuration">
+      <strong>HIVELAB</strong><span id="dev-summary"></span>
+    </aside>
+
+    <nav id="touch-controls" class="touch-controls" aria-label="Touch controls">
+      <div class="turn-controls">
+        <button data-control="left" aria-label="Turn left">‹</button>
+        <button data-control="right" aria-label="Turn right">›</button>
+      </div>
+      <div class="action-controls">
+        <button data-control="thrust" class="fly-button" aria-label="Fly forward">▲</button>
+        <button data-control="land" class="land-button" aria-label="Land and gather">LAND</button>
+        <button data-control="sting" class="sting-button" aria-label="Sting">✦</button>
+      </div>
+    </nav>
+  </main>
+  <script src="tuning.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
