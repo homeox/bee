@@ -1,8 +1,10 @@
 # Bee
 
-`Bee` is a mobile-ready, top-down foraging game forked from the movement and scrolling foundation of Star Drift. Fly out from a central hive, find flower patches, slow down and land to gather nectar, then carry it safely home. A landed bee settles visibly into a flower or the hive and is sheltered from predators until it takes off.
+`Bee` is a mobile-ready, top-down foraging game forked from the movement and scrolling foundation of Star Drift. Fly out from a central hive, find flower patches, slow down and land to gather nectar, then carry it safely home. A landed bee settles visibly into a flower or the hive and is sheltered from predators until it takes off. A prominent HOME pointer always shows the hive's direction and distance when it is off-screen.
 
-The meadow becomes more dangerous each day. Wasps pursue the player, dragonflies make fast attack runs, spiders guard slowing webs, and flowers deplete and regrow. Combat is deliberately simple: reverse into a predator and the bee automatically extends its rear stinger. Two friendly hive guards patrol home, fight nearby enemies, take damage, and respawn from the hive if defeated.
+The meadow becomes more dangerous each day. Wasps pursue the player, dragonflies make fast attack runs, spiders guard slowing webs, and flowers deplete and regrow. Combat is deliberately simple: reverse into a predator and the bee automatically extends its rear stinger. Two friendly bees begin at the hive, then alternate between guarding home, fighting nearby enemies, and collecting nectar from flowers.
+
+Nectar delivered to the hive is a spendable resource. Each player or helper respawn costs one nectar. Every five nectar collected in total unlocks another helper; its first spawn also costs one nectar. Extra helpers remain active if the bank drops, but after death they wait until the hive's current nectar reaches their five-nectar tier before spending one nectar to respawn.
 
 The compact procedural soundscape uses a filtered, low-volume wing flutter plus soft puffs and bell-like meadow cues. It remains fully offline and adds no downloaded audio assets.
 
@@ -23,7 +25,7 @@ Opening `index.html` directly also works, except PWA installation requires a web
 - Turn: Arrow Left/Right or A/D
 - Fly: Arrow Up or W
 - Reverse/attack: Arrow Down or S (a short burst is faster than forward flight)
-- Land/gather/unload: Space (slow down and hold near a flower or the hive)
+- Land/gather/unload: Space (press once near a flower or the hive to land, then press again to launch)
 - Pause: P or Escape
 - Mobile: on-screen multi-touch controls
 

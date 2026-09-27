@@ -19,6 +19,7 @@
   const pauseLabel = document.querySelector('#pause-label');
   const devPanel = document.querySelector('#dev-panel');
   const devSummary = document.querySelector('#dev-summary');
+  const landButton = document.querySelector('[data-control="land"]');
 
   const TUNING = window.BEE_TUNING || {
     dev: { unlocked: false, startDay: 1, preset: 'standard' },
@@ -37,12 +38,13 @@
 
   const state = {
     width: 0, height: 0, dpr: 1, running: false, demo: false, paused: false, lastTime: 0, elapsed: 0,
-    score: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
+    score: 0, totalNectar: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
-    flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], particles: [],
+    flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
-    waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0, actionTarget: null, actionTime: 0,
+    waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0,
+    actionTarget: null, landingTarget: null, actionTime: 0,
     audio: null, wingOsc: null, wingOsc2: null, wingGain: null, wingFilter: null, wingActive: false
   };
 
@@ -84,12 +86,12 @@
     };
   }
 
-  function makeGuard(id) {
+  function makeGuard(id, tier = 0) {
     const angle = id * Math.PI;
     return {
       id, x: Math.cos(angle) * 92, y: Math.sin(angle) * 92, vx: 0, vy: 0, angle,
       radius: 14, health: 3, maxHealth: 3, attackCooldown: random(.2, .7),
-      hit: 0, wing: random(0, TAU), target: null
+      hit: 0, wing: random(0, TAU), target: null, tier, nectar: 0, forageTarget: null
     };
   }
 
@@ -180,11 +182,12 @@
 
   function resetSession(demo) {
     clearControls();
-    state.demo = demo; state.running = !demo; state.paused = false; state.elapsed = 0; state.score = 0; state.lives = 3;
+    state.demo = demo; state.running = !demo; state.paused = false; state.elapsed = 0;
+    state.score = 0; state.totalNectar = 0; state.lives = 3;
     state.day = TUNING.dev.startDay; state.dayNectar = 0; state.dayGoal = 4 + state.day * 2;
     state.wasps = []; state.dragonflies = []; state.particles = [];
-    state.guards = [makeGuard(0), makeGuard(1)]; state.guardRespawns = [];
-    state.bee = makeBee(); state.actionTarget = null; state.actionTime = 0; state.reverseSerial = 0;
+    state.guards = [makeGuard(0, 0), makeGuard(1, 0)]; state.guardRespawns = []; state.helperTiersSpawned = [];
+    state.bee = makeBee(); state.actionTarget = null; state.landingTarget = null; state.actionTime = 0; state.reverseSerial = 0;
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
@@ -228,7 +231,32 @@
     nectarEl.textContent = Array.from({ length: capacity }, (_, i) => i < (state.bee?.nectar || 0) ? '●' : '○').join(' ');
     livesEl.textContent = '♥'.repeat(state.lives);
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
-    dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
+    const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
+    dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal} · BEES ${state.guards.length}/${availableHelpers}`;
+  }
+
+  function spawnUnlockedHelpers() {
+    const unlocked = Math.floor(state.totalNectar / 5);
+    for (let tier = 1; tier <= unlocked; tier++) {
+      if (state.helperTiersSpawned.includes(tier) || state.score < 1) continue;
+      state.score--;
+      state.helperTiersSpawned.push(tier);
+      state.guards.push(makeGuard(tier + 1, tier));
+      burst(0, 0, '#9de6e2', 20, 120);
+      showHint(`NEW HELPER BEE · ${tier * 5} NECTAR MILESTONE`, 2.2);
+      soundGuardReturn();
+    }
+  }
+
+  function bankNectar(amount, announce = true) {
+    if (amount <= 0) return;
+    state.score += amount;
+    state.totalNectar += amount;
+    state.dayNectar += amount;
+    spawnUnlockedHelpers();
+    if (announce) showHint(`DELIVERED ${amount} NECTAR`, 1.5);
+    if (state.dayNectar >= state.dayGoal) nextDay();
+    updateHud();
   }
 
   function edgePressure(value, size, zone, inset) {
@@ -381,16 +409,56 @@
     return closest;
   }
 
+  function nearbyLandingSite() {
+    const bee = state.bee;
+    if (distance(bee, { x: 0, y: 0 }) < 145) return { kind: 'hive', x: 0, y: 0 };
+    let closest = null;
+    for (const flower of state.flowers) {
+      if (flower.cooldown > 0) continue;
+      const d = distance(bee, flower);
+      if (d < flower.size + 54 && (!closest || d < closest.distance)) closest = { kind: 'flower', flower, distance: d, x: flower.x, y: flower.y };
+    }
+    return closest;
+  }
+
+  function toggleLandingMode() {
+    if (!state.running) return;
+    if (state.keys.land) {
+      state.keys.land = false; state.landingTarget = null; state.actionTarget = null; state.actionTime = 0;
+      progressEl.classList.remove('visible'); landButton?.classList.remove('active');
+      showHint('AIRBORNE', .7); soundLand();
+      return;
+    }
+    const site = nearbyLandingSite();
+    if (!site) { showHint('MOVE CLOSER TO A FLOWER OR THE HIVE', 1.1); return; }
+    state.keys.land = true; state.landingTarget = site; landButton?.classList.add('active');
+    showHint(Math.hypot(state.bee.vx, state.bee.vy) > 68 ? 'SLOWING TO LAND' : 'LANDING', .8);
+  }
+
   function updateLanding(dt) {
-    const target = state.keys.land ? landingCandidate() : null;
-    state.bee.landed = Boolean(target);
-    state.bee.sheltered = Boolean(target && (target.kind === 'flower' || target.kind === 'hive'));
-    const targetScale = target ? .68 : 1;
+    if (!state.keys.land) state.landingTarget = null;
+    const freshTarget = state.keys.land ? landingCandidate() : null;
+    if (!state.landingTarget && freshTarget) state.landingTarget = freshTarget;
+    const target = state.keys.land ? state.landingTarget : null;
+    const settled = Boolean(target && Math.hypot(state.bee.vx, state.bee.vy) <= 68);
+    state.bee.landed = settled;
+    state.bee.sheltered = Boolean(settled && (target.kind === 'flower' || target.kind === 'hive'));
+    const targetScale = settled ? .68 : 1;
     state.bee.landScale += (targetScale - state.bee.landScale) * (1 - Math.exp(-10 * dt));
     if (!target) {
       state.actionTarget = null; state.actionTime = 0; progressEl.classList.remove('visible');
       if (state.keys.land && Math.hypot(state.bee.vx, state.bee.vy) > 68) showHint('SLOW DOWN TO LAND', .7);
       else if (state.keys.land && state.bee.nectar >= TUNING.balance.nectarCapacity) showHint('NECTAR FULL — RETURN TO THE HIVE', 1);
+      return;
+    }
+    if (!settled) {
+      state.bee.vx *= Math.pow(.035, dt); state.bee.vy *= Math.pow(.035, dt);
+      progressEl.classList.add('visible'); progressFill.style.width = '30%'; progressText.textContent = 'SLOWING TO LAND';
+      return;
+    }
+    if (target.kind === 'flower' && target.flower.cooldown > 0) {
+      state.actionTarget = target; state.actionTime = 0;
+      progressEl.classList.add('visible'); progressFill.style.width = '100%'; progressText.textContent = 'SAFE IN THE FLOWER · SPACE TO LAUNCH';
       return;
     }
     const same = state.actionTarget && state.actionTarget.kind === target.kind && (target.kind === 'hive' || state.actionTarget.flower === target.flower);
@@ -399,7 +467,7 @@
     const needed = target.kind === 'hive' ? .75 : 1.05;
     if (target.kind === 'hive' && state.bee.nectar === 0) {
       state.actionTime = 0;
-      progressEl.classList.add('visible'); progressFill.style.width = '100%'; progressText.textContent = 'SAFE AT THE HIVE';
+      progressEl.classList.add('visible'); progressFill.style.width = '100%'; progressText.textContent = 'SAFE AT THE HIVE · SPACE TO LAUNCH';
       return;
     }
     state.actionTime += dt;
@@ -417,13 +485,10 @@
       soundCollect();
     } else {
       const delivered = state.bee.nectar;
-      state.score += delivered;
-      state.dayNectar += delivered;
       state.bee.nectar = 0;
       burst(0, 0, '#ffd62f', 22, 115);
-      showHint(`DELIVERED ${delivered} NECTAR`, 1.5);
+      bankNectar(delivered);
       soundDeposit();
-      if (state.dayNectar >= state.dayGoal) nextDay();
     }
     state.actionTarget = null; state.actionTime = 0; progressEl.classList.remove('visible'); updateHud();
   }
@@ -452,9 +517,8 @@
       burst((enemy.x + state.bee.x) / 2, (enemy.y + state.bee.y) / 2, '#ffd83f', 10, 110);
       soundHit();
       if (enemy.health <= 0) {
-        state.score += points;
         burst(enemy.x, enemy.y, collection === state.spiders ? '#5d4031' : '#e9ad24', 24, 180);
-        soundEnemyDown(); updateHud();
+        soundEnemyDown();
       }
       return;
     }
@@ -532,22 +596,35 @@
 
   function updateGuards(dt) {
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
+    let helperDeposits = 0;
     for (const guard of state.guards) {
       guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
-      let target = null, best = Infinity;
+      let target = null, targetKind = 'patrol', best = Infinity;
       for (const enemy of enemies) {
         const hiveDistance = Math.hypot(enemy.x, enemy.y);
         const guardDistance = distance(guard, enemy);
-        if (hiveDistance < 520 && guardDistance < best) { best = guardDistance; target = enemy; }
+        if ((hiveDistance < 520 || guardDistance < 235) && guardDistance < best) { best = guardDistance; target = enemy; targetKind = 'enemy'; }
+      }
+      let goalX, goalY, speed;
+      if (targetKind === 'enemy') {
+        goalX = target.x; goalY = target.y; speed = 180;
+      } else if (guard.nectar > 0) {
+        target = { x: 0, y: 0 }; targetKind = 'hive'; goalX = 0; goalY = 0; speed = 145;
+      } else {
+        const shouldForage = guard.forageTarget || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
+        if (guard.forageTarget?.cooldown > 0) guard.forageTarget = null;
+        if (shouldForage && !guard.forageTarget) {
+          const flowers = state.flowers.filter(flower => flower.cooldown <= 0);
+          guard.forageTarget = flowers.sort((a, b) => distance(guard, a) - distance(guard, b))[0] || null;
+        }
+        if (shouldForage && guard.forageTarget) {
+          target = guard.forageTarget; targetKind = 'flower'; goalX = target.x; goalY = target.y; speed = 138;
+        } else {
+          const patrol = state.elapsed * .62 + guard.id * Math.PI;
+          goalX = Math.cos(patrol) * (112 + guard.tier * 9); goalY = Math.sin(patrol) * (82 + guard.tier * 7); speed = 115;
+        }
       }
       guard.target = target;
-      let goalX, goalY, speed;
-      if (target) {
-        goalX = target.x; goalY = target.y; speed = 180;
-      } else {
-        const patrol = state.elapsed * .62 + guard.id * Math.PI;
-        goalX = Math.cos(patrol) * 112; goalY = Math.sin(patrol) * 82; speed = 115;
-      }
       const desired = Math.atan2(goalY - guard.y, goalX - guard.x);
       guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
       guard.vx += Math.cos(guard.angle) * speed * dt * 3;
@@ -555,27 +632,43 @@
       guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
       guard.x += guard.vx * dt; guard.y += guard.vy * dt;
 
-      if (target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
+      if (targetKind === 'flower' && target && distance(guard, target) < target.size + 19) {
+        target.cooldown = random(18, 28); target.nectar = 0; guard.nectar = 1; guard.forageTarget = null;
+        burst(target.x, target.y, target.type.petal, 8, 58); soundCollect();
+      }
+      if (targetKind === 'hive' && distance(guard, { x: 0, y: 0 }) < 88) {
+        guard.nectar = 0; helperDeposits++; burst(0, 0, '#8ee6e9', 7, 70);
+      }
+      if (targetKind === 'enemy' && target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
         target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
         const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
         burst(impactX, impactY, '#83d8e3', 10, 110); soundHit();
         if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); }
         if (guard.health <= 0) {
           burst(guard.x, guard.y, '#78d1db', 22, 165);
-          state.guardRespawns.push({ id: guard.id, timer: 4.5 });
+          state.guardRespawns.push({ id: guard.id, tier: guard.tier, timer: 4.5, notified: false });
           soundGuardDown();
         }
       }
     }
     state.guards = state.guards.filter(guard => guard.health > 0);
+    if (helperDeposits > 0) { bankNectar(helperDeposits, false); soundDeposit(); }
     for (const respawn of state.guardRespawns) {
       respawn.timer -= dt;
       if (respawn.timer <= 0) {
-        state.guards.push(makeGuard(respawn.id)); burst(0, 0, '#8ee6e9', 16, 105);
-        showHint('A HIVE GUARD HAS RETURNED', 1.4); soundGuardReturn();
+        const requirement = respawn.tier > 0 ? respawn.tier * 5 : 1;
+        if (state.score >= requirement) {
+          state.score--;
+          state.guards.push(makeGuard(respawn.id, respawn.tier)); burst(0, 0, '#8ee6e9', 16, 105);
+          showHint(`${respawn.tier > 0 ? 'HELPER' : 'HIVE GUARD'} RESPAWNED · 1 NECTAR`, 1.6); soundGuardReturn();
+          respawn.done = true; updateHud();
+        } else if (!respawn.notified) {
+          const need = respawn.tier > 0 ? `${requirement} STORED NECTAR` : '1 STORED NECTAR';
+          showHint(`BEE WAITING TO RESPAWN · NEED ${need}`, 2); respawn.notified = true;
+        }
       }
     }
-    state.guardRespawns = state.guardRespawns.filter(respawn => respawn.timer > 0);
+    state.guardRespawns = state.guardRespawns.filter(respawn => !respawn.done);
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
     state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0);
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
@@ -602,7 +695,12 @@
     state.shake = 14; state.flash = .3;
     burst(state.bee.x, state.bee.y, '#f5b51e', 28, 200); soundHurt(); updateHud();
     if (state.lives <= 0) {
-      if (state.demo) beginDemo();
+      if (state.score >= 1) {
+        state.score--;
+        state.lives = 3; state.bee = makeBee(); state.landingTarget = null; state.actionTarget = null;
+        centerCamera(); burst(0, 116, '#ffe56f', 24, 130);
+        showHint('RESPAWNED FROM THE HIVE · 1 NECTAR', 2); soundGuardReturn(); updateHud();
+      } else if (state.demo) beginDemo();
       else gameOver();
     }
     else showHint('OUCH! YOU DROPPED SOME NECTAR', 1.7);
@@ -610,9 +708,9 @@
 
   function gameOver() {
     state.running = false; updateWingSound(false);
-    finalScoreEl.textContent = state.score;
-    const record = state.score > state.best;
-    if (record) { state.best = state.score; localStorage.setItem('bee-best', String(state.best)); }
+    finalScoreEl.textContent = state.totalNectar;
+    const record = state.totalNectar > state.best;
+    if (record) { state.best = state.totalNectar; localStorage.setItem('bee-best', String(state.best)); }
     newBestEl.classList.toggle('visible', record);
     overPanel.classList.add('visible'); progressEl.classList.remove('visible');
   }
@@ -808,8 +906,24 @@
     ctx.save(); ctx.translate(x, y); ctx.rotate(angle); ctx.fillStyle = color; ctx.strokeStyle = 'rgba(44,45,24,.55)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-8, -9); ctx.lineTo(-4, 0); ctx.lineTo(-8, 9); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.rotate(-angle); ctx.fillStyle = '#2c3824'; ctx.font = '800 10px "Nunito"'; ctx.textAlign = 'center'; ctx.fillText(symbol, 0, 25); ctx.restore();
   }
 
+  function drawHomePointer() {
+    const hive = { x: 0, y: 0 }, p = worldToScreen(hive), pad = 86;
+    if (p.x > 80 && p.x < state.width - 80 && p.y > 110 && p.y < state.height - 80) return;
+    const cx = state.width / 2, cy = state.height / 2;
+    const angle = Math.atan2(p.y - cy, p.x - cx);
+    const x = clamp(cx + Math.cos(angle) * state.width * .43, pad, state.width - pad);
+    const y = clamp(cy + Math.sin(angle) * state.height * .38, 128, state.height - pad);
+    const metres = Math.max(10, Math.round(distance(state.bee, hive) / 10) * 10);
+    ctx.save(); ctx.translate(x, y);
+    ctx.fillStyle = 'rgba(50,48,22,.82)'; ctx.strokeStyle = '#ffe15b'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.roundRect(-48, -22, 96, 44, 20); ctx.fill(); ctx.stroke();
+    ctx.save(); ctx.rotate(angle); ctx.fillStyle = '#ffe15b'; ctx.beginPath(); ctx.moveTo(28, 0); ctx.lineTo(12, -9); ctx.lineTo(15, 0); ctx.lineTo(12, 9); ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.fillStyle = '#fff5b8'; ctx.font = '800 10px "Nunito"'; ctx.textAlign = 'center'; ctx.fillText('⌂ HOME', -8, -3);
+    ctx.fillStyle = '#f1d56a'; ctx.font = '800 8px "Nunito"'; ctx.fillText(`${metres}m`, -8, 10); ctx.restore();
+  }
+
   function drawMarkers() {
-    if (distance(state.bee, { x: 0, y: 0 }) > 180 || state.bee.nectar > 0) drawCompassMarker({ x: 0, y: 0 }, '#ffc82d', 'HIVE');
+    drawHomePointer();
     if (state.bee.nectar < TUNING.balance.nectarCapacity) {
       const flowers = state.flowers.filter(f => f.cooldown <= 0).sort((a, b) => distance(state.bee, a) - distance(state.bee, b));
       for (const flower of flowers.slice(0, 2)) drawCompassMarker(flower, flower.type.petal, 'FLOWER');
@@ -919,22 +1033,27 @@
     state.paused = !state.paused; pauseLabel.classList.toggle('visible', state.paused); updateWingSound(false);
   }
 
-  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ArrowDown: 'reverse', s: 'reverse', S: 'reverse', ' ': 'land' };
+  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ArrowDown: 'reverse', s: 'reverse', S: 'reverse' };
   addEventListener('keydown', event => {
     if (keyMap[event.key]) { state.keys[keyMap[event.key]] = true; event.preventDefault(); unlockAudio(); }
+    if (event.key === ' ' && !event.repeat) { event.preventDefault(); unlockAudio(); toggleLandingMode(); }
     if ((event.key === 'p' || event.key === 'P' || event.key === 'Escape') && !event.repeat) togglePause();
     if (event.key === 'Enter' && !state.running) beginGame();
   });
   addEventListener('keyup', event => { if (keyMap[event.key]) { state.keys[keyMap[event.key]] = false; event.preventDefault(); } });
-  addEventListener('blur', () => { for (const key of Object.keys(state.keys)) state.keys[key] = false; if (state.running && !state.paused) togglePause(); });
+  addEventListener('blur', () => { for (const key of Object.keys(state.keys)) if (key !== 'land') state.keys[key] = false; if (state.running && !state.paused) togglePause(); });
 
   for (const button of document.querySelectorAll('[data-control]')) {
     const control = button.dataset.control;
     const set = active => { state.keys[control] = active; button.classList.toggle('active', active); if (active) unlockAudio(); };
-    button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); set(true); });
-    button.addEventListener('pointerup', event => { event.preventDefault(); set(false); });
-    button.addEventListener('pointercancel', () => set(false));
-    button.addEventListener('lostpointercapture', () => set(false));
+    if (control === 'land') {
+      button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); unlockAudio(); toggleLandingMode(); });
+    } else {
+      button.addEventListener('pointerdown', event => { event.preventDefault(); button.setPointerCapture(event.pointerId); set(true); });
+      button.addEventListener('pointerup', event => { event.preventDefault(); set(false); });
+      button.addEventListener('pointercancel', () => set(false));
+      button.addEventListener('lostpointercapture', () => set(false));
+    }
   }
 
   document.querySelector('#start-button').addEventListener('click', beginGame);
@@ -944,6 +1063,6 @@
   if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 
   resize(); beginDemo();
-  window.__BEE_DEBUG__ = { state, beginGame, beginDemo, updateDemoAI, spawnWasp, spawnDragonfly, nextDay, landingCandidate, update, TUNING };
+  window.__BEE_DEBUG__ = { state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, spawnWasp, spawnDragonfly, nextDay, landingCandidate, update, TUNING };
   requestAnimationFrame(frame);
 })();
