@@ -5,6 +5,15 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-27
+
+### Fixed
+
+- Enemies no longer see or pursue a bee that has landed. Wasps, dragonflies,
+  and spiders now only target the player and helper bees while those bees are
+  airborne (`sheltered`), so a landed bee is genuinely hidden rather than merely
+  immune to damage.
+
 ## [0.2.0] - 2026-09-27
 
 ### Added

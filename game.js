@@ -550,14 +550,26 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       state.dragonflyTimer = random(18, 28) / (TUNING.balance.enemies * (1 + state.day * .035));
     }
 
+    const chaseables = [];
+    if (!state.bee.sheltered) chaseables.push(state.bee);
+    for (const guard of state.guards) if (!guard.sheltered) chaseables.push(guard);
+    const nearestChaseable = from => {
+      let target = null, best = Infinity;
+      for (const candidate of chaseables) { const d = distance(from, candidate); if (d < best) { best = d; target = candidate; } }
+      return target;
+    };
+
     for (const wasp of state.wasps) {
       wasp.hit = Math.max(0, wasp.hit - dt);
       wasp.phase += dt * 7;
-      const desired = Math.atan2(state.bee.y - wasp.y, state.bee.x - wasp.x) + Math.sin(wasp.phase) * .28;
-      wasp.angle += angleDelta(wasp.angle, desired) * Math.min(1, dt * 3.5);
-      const speed = 105 + state.day * 3;
-      wasp.vx += Math.cos(wasp.angle) * speed * dt * 2.2;
-      wasp.vy += Math.sin(wasp.angle) * speed * dt * 2.2;
+      const waspTarget = nearestChaseable(wasp);
+      if (waspTarget) {
+        const desired = Math.atan2(waspTarget.y - wasp.y, waspTarget.x - wasp.x) + Math.sin(wasp.phase) * .28;
+        wasp.angle += angleDelta(wasp.angle, desired) * Math.min(1, dt * 3.5);
+        const speed = 105 + state.day * 3;
+        wasp.vx += Math.cos(wasp.angle) * speed * dt * 2.2;
+        wasp.vy += Math.sin(wasp.angle) * speed * dt * 2.2;
+      }
       wasp.vx *= Math.pow(.14, dt); wasp.vy *= Math.pow(.14, dt);
       wasp.x += wasp.vx * dt; wasp.y += wasp.vy * dt;
       resolveEnemyContact(wasp, state.wasps, 2);
@@ -567,8 +579,9 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       dragon.hit = Math.max(0, dragon.hit - dt);
       dragon.phase += dt * 18;
       dragon.swoop -= dt;
-      if (dragon.swoop <= 0) {
-        const aim = Math.atan2(state.bee.y - dragon.y, state.bee.x - dragon.x);
+      const dragonTarget = nearestChaseable(dragon);
+      if (dragon.swoop <= 0 && dragonTarget) {
+        const aim = Math.atan2(dragonTarget.y - dragon.y, dragonTarget.x - dragon.x);
         dragon.vx = Math.cos(aim) * (360 + state.day * 4);
         dragon.vy = Math.sin(aim) * (360 + state.day * 4);
         dragon.swoop = random(2.5, 4.1);
@@ -579,17 +592,17 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       dragon.angle = Math.atan2(dragon.vy, dragon.vx);
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
       resolveEnemyContact(dragon, state.dragonflies, 4);
-      if (distance(dragon, state.bee) > 1500) {
+      if (dragonTarget && distance(dragon, dragonTarget) > 1500) {
         const angle = random(0, TAU);
-        dragon.x = state.bee.x + Math.cos(angle) * 820; dragon.y = state.bee.y + Math.sin(angle) * 820;
+        dragon.x = dragonTarget.x + Math.cos(angle) * 820; dragon.y = dragonTarget.y + Math.sin(angle) * 820;
       }
     }
 
     for (const spider of state.spiders) {
       spider.cooldown -= dt; spider.phase += dt * 4;
-      const d = distance(spider, state.bee);
-      if (d < 260 && spider.cooldown <= 0) {
-        const angle = Math.atan2(state.bee.y - spider.y, state.bee.x - spider.x);
+      const spiderTarget = nearestChaseable(spider);
+      if (spiderTarget && distance(spider, spiderTarget) < 260 && spider.cooldown <= 0) {
+        const angle = Math.atan2(spiderTarget.y - spider.y, spiderTarget.x - spider.x);
         spider.vx += Math.cos(angle) * 290; spider.vy += Math.sin(angle) * 290; spider.cooldown = 2.4;
       }
       const homeAngle = Math.atan2(spider.homeY - spider.y, spider.homeX - spider.x);
