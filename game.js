@@ -41,7 +41,7 @@
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
     flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], particles: [],
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
-    keys: { left: false, right: false, thrust: false, land: false, sting: false },
+    keys: { left: false, right: false, thrust: false, reverse: false, land: false, sting: false },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, nextSting: 0, stingSerial: 0, actionTarget: null, actionTime: 0,
     audio: null, wingOsc: null, wingGain: null
   };
@@ -79,7 +79,8 @@
   function makeBee() {
     return {
       x: 0, y: 116, vx: 0, vy: 0, angle: -Math.PI / 2, radius: 17,
-      nectar: 0, invulnerable: 2.2, wing: 0, bank: 0, landing: false, stingTimer: 0
+      nectar: 0, invulnerable: 2.2, wing: 0, bank: 0, landing: false, landed: false,
+      sheltered: false, landScale: 1, stingTimer: 0
     };
   }
 
@@ -123,7 +124,7 @@
     const radius = random(520, 760);
     const wasp = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
-      vx: 0, vy: 0, angle: angle + Math.PI, radius: 18, health: 2 + Math.floor(state.day / 6),
+      vx: 0, vy: 0, angle: angle + Math.PI, radius: 24, health: 2 + Math.floor(state.day / 6),
       maxHealth: 2 + Math.floor(state.day / 6), phase: random(0, TAU), hit: 0, lastSting: -1
     };
     state.wasps.push(wasp);
@@ -221,7 +222,7 @@
     const zoneY = clamp(state.height * .34, 108, 250);
     const px = edgePressure(screenX, state.width, zoneX, insetX);
     const py = edgePressure(screenY, state.height, zoneY, insetY);
-    const accelerating = state.keys.thrust && !bee.landing;
+    const accelerating = (state.keys.thrust || state.keys.reverse) && !bee.landing;
     const targetX = accelerating && Math.sign(bee.vx) === Math.sign(px) ? bee.vx * Math.pow(Math.abs(px), 1.15) * 2.25 : 0;
     const targetY = accelerating && Math.sign(bee.vy) === Math.sign(py) ? bee.vy * Math.pow(Math.abs(py), 1.15) * 2.25 : 0;
     const response = 1 - Math.exp(-(accelerating ? 11 : 4.6) * dt);
@@ -242,18 +243,19 @@
     const bee = state.bee;
     bee.invulnerable = Math.max(0, bee.invulnerable - dt);
     bee.stingTimer = Math.max(0, bee.stingTimer - dt);
-    bee.wing += dt * (state.keys.thrust ? 38 : 21);
+    bee.wing += dt * (state.keys.thrust || state.keys.reverse ? 38 : 21);
     bee.landing = state.keys.land;
     const turn = (state.keys.left ? -1 : 0) + (state.keys.right ? 1 : 0);
     const speed = Math.hypot(bee.vx, bee.vy);
     bee.angle += turn * (2.7 + Math.min(speed, 180) / 170) * dt;
-    if (state.keys.thrust && !bee.landing) {
-      const thrust = 245;
+    const drive = !bee.landing ? (state.keys.thrust ? 1 : 0) - (state.keys.reverse ? .64 : 0) : 0;
+    if (drive !== 0) {
+      const thrust = 245 * drive;
       bee.vx += Math.cos(bee.angle) * thrust * dt;
       bee.vy += Math.sin(bee.angle) * thrust * dt;
       emitWingDust(bee);
     }
-    const drag = Math.pow(bee.landing ? .08 : state.keys.thrust ? .76 : .42, dt);
+    const drag = Math.pow(bee.landing ? .08 : drive !== 0 ? .76 : .42, dt);
     bee.vx *= drag; bee.vy *= drag;
     const maxSpeed = bee.nectar ? 245 - bee.nectar * 9 : 250;
     const nowSpeed = Math.hypot(bee.vx, bee.vy);
@@ -279,14 +281,14 @@
     updateCamera(dt);
     updateLanding(dt);
     if (state.keys.sting) beginContactSting();
-    updateWingSound(state.keys.thrust && !bee.landing);
+    updateWingSound(drive !== 0 && !bee.landing);
   }
 
   function landingCandidate() {
     const bee = state.bee;
     const speed = Math.hypot(bee.vx, bee.vy);
     if (speed > 68) return null;
-    if (distance(bee, { x: 0, y: 0 }) < 120 && bee.nectar > 0) return { kind: 'hive', x: 0, y: 0 };
+    if (distance(bee, { x: 0, y: 0 }) < 120) return { kind: 'hive', x: 0, y: 0 };
     if (bee.nectar >= TUNING.balance.nectarCapacity) return null;
     let closest = null;
     for (const flower of state.flowers) {
@@ -299,6 +301,10 @@
 
   function updateLanding(dt) {
     const target = state.keys.land ? landingCandidate() : null;
+    state.bee.landed = Boolean(target);
+    state.bee.sheltered = Boolean(target && (target.kind === 'flower' || target.kind === 'hive'));
+    const targetScale = target ? .68 : 1;
+    state.bee.landScale += (targetScale - state.bee.landScale) * (1 - Math.exp(-10 * dt));
     if (!target) {
       state.actionTarget = null; state.actionTime = 0; progressEl.classList.remove('visible');
       if (state.keys.land && Math.hypot(state.bee.vx, state.bee.vy) > 68) showHint('SLOW DOWN TO LAND', .7);
@@ -309,6 +315,11 @@
     if (!same) { state.actionTarget = target; state.actionTime = 0; soundLand(); }
     state.bee.vx *= Math.pow(.04, dt); state.bee.vy *= Math.pow(.04, dt);
     const needed = target.kind === 'hive' ? .75 : 1.05;
+    if (target.kind === 'hive' && state.bee.nectar === 0) {
+      state.actionTime = 0;
+      progressEl.classList.add('visible'); progressFill.style.width = '100%'; progressText.textContent = 'SAFE AT THE HIVE';
+      return;
+    }
     state.actionTime += dt;
     progressEl.classList.add('visible');
     progressFill.style.width = `${clamp(state.actionTime / needed, 0, 1) * 100}%`;
@@ -337,19 +348,31 @@
 
   function beginContactSting() {
     if (state.elapsed < state.nextSting || state.bee.landing) return;
-    state.nextSting = state.elapsed + .48;
+    state.nextSting = state.elapsed + .55;
     state.stingSerial++;
     const bee = state.bee;
-    bee.stingTimer = .27;
-    bee.vx += Math.cos(bee.angle) * 175;
-    bee.vy += Math.sin(bee.angle) * 175;
-    burst(bee.x - Math.cos(bee.angle) * 14, bee.y - Math.sin(bee.angle) * 14, '#fff1a0', 6, 55);
+    bee.stingTimer = .42;
+    const rearX = bee.x - Math.cos(bee.angle) * 27;
+    const rearY = bee.y - Math.sin(bee.angle) * 27;
+    burst(rearX, rearY, '#fff1a0', 6, 55);
     soundSting();
   }
 
   function resolveEnemyContact(enemy, collection, points) {
-    if (distance(enemy, state.bee) >= enemy.radius + state.bee.radius + (state.bee.stingTimer > 0 ? 7 : 0)) return;
-    if (state.bee.stingTimer > 0 && enemy.lastSting !== state.stingSerial) {
+    const bodyContact = distance(enemy, state.bee) < enemy.radius + state.bee.radius;
+    const stinger = {
+      x: state.bee.x - Math.cos(state.bee.angle) * 35,
+      y: state.bee.y - Math.sin(state.bee.angle) * 35
+    };
+    const stingerContact = state.bee.stingTimer > 0 && distance(enemy, stinger) < enemy.radius + 11;
+    if (!bodyContact && !stingerContact) return;
+    if (state.bee.sheltered) {
+      const away = Math.atan2(enemy.y - state.bee.y, enemy.x - state.bee.x);
+      enemy.vx = (enemy.vx || 0) + Math.cos(away) * 55;
+      enemy.vy = (enemy.vy || 0) + Math.sin(away) * 55;
+      return;
+    }
+    if (stingerContact && enemy.lastSting !== state.stingSerial) {
       enemy.lastSting = state.stingSerial;
       enemy.health--; enemy.hit = .18;
       const angle = Math.atan2(enemy.y - state.bee.y, enemy.x - state.bee.x);
@@ -449,7 +472,7 @@
   }
 
   function damageBee(fromX, fromY) {
-    if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0) return;
+    if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0 || state.bee.sheltered) return;
     state.bee.invulnerable = 2;
     state.lives--;
     const angle = Math.atan2(state.bee.y - fromY, state.bee.x - fromX);
@@ -569,7 +592,7 @@
   function drawBee(bee) {
     const p = worldToScreen(bee);
     if (bee.invulnerable > 0 && Math.floor(bee.invulnerable * 10) % 2 === 0) return;
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(bee.angle + Math.PI / 2);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(bee.angle + Math.PI / 2); ctx.scale(bee.landScale, bee.landScale);
     const flap = Math.sin(bee.wing) * .35;
     ctx.fillStyle = 'rgba(224,248,247,.66)'; ctx.strokeStyle = 'rgba(83,117,105,.45)'; ctx.lineWidth = 1.5;
     ctx.save(); ctx.rotate(-.5 - flap); ctx.beginPath(); ctx.ellipse(-15, -2, 11, 21, -.4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
@@ -590,12 +613,20 @@
 
   function drawWasp(wasp) {
     if (!onScreen(wasp, 50)) return;
-    const p = worldToScreen(wasp); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(wasp.angle + Math.PI / 2);
-    ctx.fillStyle = 'rgba(224,244,238,.58)'; ctx.beginPath(); ctx.ellipse(-15, 0, 8, 17, -.45, 0, TAU); ctx.ellipse(15, 0, 8, 17, .45, 0, TAU); ctx.fill();
-    ctx.fillStyle = wasp.hit ? '#fff' : '#f5a91a'; ctx.strokeStyle = '#281c1a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.ellipse(0, 3, 11, 21, 0, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = '#281c1a'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-10, -1); ctx.lineTo(10, -1); ctx.moveTo(-10, 9); ctx.lineTo(10, 9); ctx.stroke();
-    ctx.fillStyle = '#9f372b'; ctx.beginPath(); ctx.arc(-4, -11, 2, 0, TAU); ctx.arc(4, -11, 2, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#281c1a'; ctx.beginPath(); ctx.moveTo(0, 28); ctx.lineTo(-4, 17); ctx.lineTo(4, 17); ctx.closePath(); ctx.fill(); ctx.restore();
+    const p = worldToScreen(wasp); ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(wasp.angle + Math.PI / 2); ctx.scale(1.12, 1.12);
+    const flash = wasp.hit ? '#fff' : '#f2ad18';
+    ctx.fillStyle = 'rgba(222,239,222,.62)'; ctx.strokeStyle = 'rgba(50,68,52,.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-5, -7); ctx.lineTo(-41, -13); ctx.quadraticCurveTo(-34, 4, -7, 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(5, -7); ctx.lineTo(41, -13); ctx.quadraticCurveTo(34, 4, 7, 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#29201a'; ctx.beginPath(); ctx.ellipse(0, -15, 9, 11, 0, 0, TAU); ctx.fill();
+    ctx.fillStyle = flash; ctx.strokeStyle = '#29201a'; ctx.lineWidth = 2.7;
+    ctx.beginPath(); ctx.moveTo(-7, -6); ctx.quadraticCurveTo(-12, 1, -5, 7); ctx.lineTo(-9, 34); ctx.quadraticCurveTo(0, 51, 9, 34); ctx.lineTo(5, 7); ctx.quadraticCurveTo(12, 1, 7, -6); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#29201a'; ctx.lineWidth = 5;
+    ctx.beginPath(); ctx.moveTo(-6, 10); ctx.lineTo(6, 10); ctx.moveTo(-8, 23); ctx.lineTo(8, 23); ctx.moveTo(-7, 35); ctx.lineTo(7, 35); ctx.stroke();
+    ctx.fillStyle = '#29201a'; ctx.beginPath(); ctx.moveTo(0, 68); ctx.lineTo(-4, 44); ctx.lineTo(4, 44); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#29201a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-5, -21); ctx.lineTo(-14, -30); ctx.moveTo(5, -21); ctx.lineTo(14, -30); ctx.stroke();
+    ctx.fillStyle = '#d94731'; ctx.beginPath(); ctx.ellipse(-4, -17, 2.8, 4, 0, 0, TAU); ctx.ellipse(4, -17, 2.8, 4, 0, 0, TAU); ctx.fill();
+    ctx.restore();
   }
 
   function drawDragonfly(dragon) {
@@ -710,7 +741,7 @@
     state.paused = !state.paused; pauseLabel.classList.toggle('visible', state.paused); updateWingSound(false);
   }
 
-  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ' ': 'land', e: 'sting', E: 'sting' };
+  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ArrowDown: 'reverse', s: 'reverse', S: 'reverse', ' ': 'land', e: 'sting', E: 'sting' };
   addEventListener('keydown', event => {
     if (keyMap[event.key]) { state.keys[keyMap[event.key]] = true; event.preventDefault(); unlockAudio(); }
     if ((event.key === 'p' || event.key === 'P' || event.key === 'Escape') && !event.repeat) togglePause();

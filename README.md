@@ -1,6 +1,6 @@
 # Bee
 
-`Bee` is a mobile-ready, top-down foraging game forked from the movement and scrolling foundation of Star Drift. Fly out from a central hive, find flower patches, slow down and land to gather nectar, then carry it safely home.
+`Bee` is a mobile-ready, top-down foraging game forked from the movement and scrolling foundation of Star Drift. Fly out from a central hive, find flower patches, slow down and land to gather nectar, then carry it safely home. A landed bee settles visibly into a flower or the hive and is sheltered from predators until it takes off.
 
 The meadow becomes more dangerous each day. Wasps pursue the player, dragonflies make fast attack runs, spiders guard slowing webs, flowers deplete and regrow, and a short contact-only sting lunge gives the bee a fighting chance.
 
@@ -18,8 +18,9 @@ Opening `index.html` directly also works, except PWA installation requires a web
 
 - Turn: Arrow Left/Right or A/D
 - Fly: Arrow Up or W
+- Reverse: Arrow Down or S
 - Land/gather/unload: Space (slow down and hold near a flower or the hive)
-- Contact sting/lunge: E
+- Extend rear contact stinger: E (line predators up behind the bee or reverse into them)
 - Pause: P or Escape
 - Mobile: on-screen multi-touch controls
 
