@@ -262,6 +262,14 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     updateHud();
   }
 
+  function rewardKill(enemy) {
+    if (enemy.rewarded) return;
+    enemy.rewarded = true;
+    bankNectar(2, false);
+    burst(enemy.x, enemy.y, '#ffd83f', 14, 130);
+    showHint('+2 NECTAR', .8);
+  }
+
   function edgePressure(value, size, zone, inset) {
     const ramp = Math.max(1, zone - inset);
     if (value < zone) return -clamp((zone - value) / ramp, 0, 1);
@@ -522,6 +530,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       if (enemy.health <= 0) {
         burst(enemy.x, enemy.y, collection === state.spiders ? '#5d4031' : '#e9ad24', 24, 180);
         soundEnemyDown();
+        rewardKill(enemy);
       }
       return;
     }
@@ -652,7 +661,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
         target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
         const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
         burst(impactX, impactY, '#83d8e3', 10, 110); soundHit();
-        if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); }
+        if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target); }
         if (guard.health <= 0) {
           burst(guard.x, guard.y, '#78d1db', 22, 165);
           state.guardRespawns.push({ id: guard.id, tier: guard.tier, timer: 4.5, notified: false });
