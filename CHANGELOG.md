@@ -5,6 +5,15 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-09-27
+
+### Fixed
+
+- Helper bees now always keep at least one dedicated forager and one dedicated
+  hive guard; any additional bees alternate freely between the two jobs.
+  Previously every bee chose to forage or patrol probabilistically, so the hive
+  could be left momentarily unguarded.
+
 ## [0.1.0] - 2026-09-27
 
 First versioned pre-alpha: stability and polish lock. No new mechanics beyond

@@ -600,7 +600,11 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
   function updateGuards(dt) {
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
     let helperDeposits = 0;
+    const roster = [...state.guards].sort((a, b) => a.id - b.id);
+    const foragerId = roster.length >= 2 ? roster[0].id : null;
+    const hiveGuardId = roster.length >= 2 ? roster[1].id : null;
     for (const guard of state.guards) {
+      guard.role = guard.id === foragerId ? 'forage' : guard.id === hiveGuardId ? 'guard' : 'alternate';
       guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
       let target = null, targetKind = 'patrol', best = Infinity;
       for (const enemy of enemies) {
@@ -614,7 +618,9 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       } else if (guard.nectar > 0) {
         target = { x: 0, y: 0 }; targetKind = 'hive'; goalX = 0; goalY = 0; speed = 145;
       } else {
-        const shouldForage = guard.forageTarget || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
+        const shouldForage = guard.role === 'forage' ? true
+          : guard.role === 'guard' ? false
+          : Boolean(guard.forageTarget) || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
         if (guard.forageTarget?.cooldown > 0) guard.forageTarget = null;
         if (shouldForage && !guard.forageTarget) {
           const flowers = state.flowers.filter(flower => flower.cooldown <= 0);
