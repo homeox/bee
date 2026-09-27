@@ -34,6 +34,7 @@ html, body {
 .hud strong { color: #242015; font: 800 clamp(18px, 3vw, 28px)/1.2 "Baloo 2", sans-serif; }
 .hud-title { color: #2b271e; font: 800 18px/1 "Baloo 2", sans-serif; letter-spacing: .22em; }
 .hud-title span { letter-spacing: 0; }
+.version { display: block; margin-top: 3px; font-size: 9px; font-style: normal; font-weight: 800; letter-spacing: .18em; color: rgba(43, 39, 30, .55); }
 
 .status-row {
   position: absolute; z-index: 3; top: max(68px, calc(env(safe-area-inset-top) + 64px));

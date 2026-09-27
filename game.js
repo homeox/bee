@@ -3,8 +3,10 @@
 
   const canvas = document.querySelector('#game');
   const ctx = canvas.getContext('2d');
-  const scoreEl = document.querySelector('#score');
-  const nectarEl = document.querySelector('#nectar');
+const scoreEl = document.querySelector('#score');
+const nectarEl = document.querySelector('#nectar');
+const versionEl = document.querySelector('#version');
+const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0';
   const livesEl = document.querySelector('#lives');
   const dayEl = document.querySelector('#day');
   const hintEl = document.querySelector('#hint');
@@ -229,6 +231,7 @@
     scoreEl.textContent = String(state.score).padStart(3, '0');
     const capacity = TUNING.balance.nectarCapacity;
     nectarEl.textContent = Array.from({ length: capacity }, (_, i) => i < (state.bee?.nectar || 0) ? '●' : '○').join(' ');
+  if (versionEl) versionEl.textContent = 'v' + BEE_VERSION;
     livesEl.textContent = '♥'.repeat(state.lives);
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
     const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
