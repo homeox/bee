@@ -39,10 +39,10 @@
     width: 0, height: 0, dpr: 1, running: false, paused: false, lastTime: 0, elapsed: 0,
     score: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
-    flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], particles: [],
+    flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], particles: [],
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
-    keys: { left: false, right: false, thrust: false, reverse: false, land: false, sting: false },
-    waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, nextSting: 0, stingSerial: 0, actionTarget: null, actionTime: 0,
+    keys: { left: false, right: false, thrust: false, reverse: false, land: false },
+    waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0, actionTarget: null, actionTime: 0,
     audio: null, wingOsc: null, wingGain: null
   };
 
@@ -80,7 +80,16 @@
     return {
       x: 0, y: 116, vx: 0, vy: 0, angle: -Math.PI / 2, radius: 17,
       nectar: 0, invulnerable: 2.2, wing: 0, bank: 0, landing: false, landed: false,
-      sheltered: false, landScale: 1, stingTimer: 0
+      sheltered: false, landScale: 1, reverseBurst: 0, wasReversing: false
+    };
+  }
+
+  function makeGuard(id) {
+    const angle = id * Math.PI;
+    return {
+      id, x: Math.cos(angle) * 92, y: Math.sin(angle) * 92, vx: 0, vy: 0, angle,
+      radius: 14, health: 3, maxHealth: 3, attackCooldown: random(.2, .7),
+      hit: 0, wing: random(0, TAU), target: null
     };
   }
 
@@ -169,7 +178,8 @@
     state.running = true; state.paused = false; state.elapsed = 0; state.score = 0; state.lives = 3;
     state.day = TUNING.dev.startDay; state.dayNectar = 0; state.dayGoal = 4 + state.day * 2;
     state.wasps = []; state.dragonflies = []; state.particles = [];
-    state.bee = makeBee(); state.actionTarget = null; state.actionTime = 0; state.nextSting = 0; state.stingSerial = 0;
+    state.guards = [makeGuard(0), makeGuard(1)]; state.guardRespawns = [];
+    state.bee = makeBee(); state.actionTarget = null; state.actionTime = 0; state.reverseSerial = 0;
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
@@ -242,13 +252,23 @@
   function updateBee(dt) {
     const bee = state.bee;
     bee.invulnerable = Math.max(0, bee.invulnerable - dt);
-    bee.stingTimer = Math.max(0, bee.stingTimer - dt);
+    bee.reverseBurst = Math.max(0, bee.reverseBurst - dt);
     bee.wing += dt * (state.keys.thrust || state.keys.reverse ? 38 : 21);
     bee.landing = state.keys.land;
+    if (state.keys.reverse && !bee.wasReversing && !bee.landing) {
+      bee.reverseBurst = .48;
+      state.reverseSerial++;
+      const rearX = bee.x - Math.cos(bee.angle) * 27;
+      const rearY = bee.y - Math.sin(bee.angle) * 27;
+      burst(rearX, rearY, '#fff1a0', 6, 55);
+      soundReverseBurst();
+    }
+    bee.wasReversing = state.keys.reverse;
     const turn = (state.keys.left ? -1 : 0) + (state.keys.right ? 1 : 0);
     const speed = Math.hypot(bee.vx, bee.vy);
     bee.angle += turn * (2.7 + Math.min(speed, 180) / 170) * dt;
-    const drive = !bee.landing ? (state.keys.thrust ? 1 : 0) - (state.keys.reverse ? .64 : 0) : 0;
+    const reversePower = bee.reverseBurst > 0 ? 1.18 : .76;
+    const drive = !bee.landing ? (state.keys.reverse ? -reversePower : state.keys.thrust ? 1 : 0) : 0;
     if (drive !== 0) {
       const thrust = 245 * drive;
       bee.vx += Math.cos(bee.angle) * thrust * dt;
@@ -257,7 +277,8 @@
     }
     const drag = Math.pow(bee.landing ? .08 : drive !== 0 ? .76 : .42, dt);
     bee.vx *= drag; bee.vy *= drag;
-    const maxSpeed = bee.nectar ? 245 - bee.nectar * 9 : 250;
+    const baseMaxSpeed = bee.nectar ? 245 - bee.nectar * 9 : 250;
+    const maxSpeed = bee.reverseBurst > 0 ? baseMaxSpeed * 1.14 : baseMaxSpeed;
     const nowSpeed = Math.hypot(bee.vx, bee.vy);
     if (nowSpeed > maxSpeed) { bee.vx *= maxSpeed / nowSpeed; bee.vy *= maxSpeed / nowSpeed; }
 
@@ -280,7 +301,6 @@
     }
     updateCamera(dt);
     updateLanding(dt);
-    if (state.keys.sting) beginContactSting();
     updateWingSound(drive !== 0 && !bee.landing);
   }
 
@@ -346,25 +366,13 @@
     state.actionTarget = null; state.actionTime = 0; progressEl.classList.remove('visible'); updateHud();
   }
 
-  function beginContactSting() {
-    if (state.elapsed < state.nextSting || state.bee.landing) return;
-    state.nextSting = state.elapsed + .55;
-    state.stingSerial++;
-    const bee = state.bee;
-    bee.stingTimer = .42;
-    const rearX = bee.x - Math.cos(bee.angle) * 27;
-    const rearY = bee.y - Math.sin(bee.angle) * 27;
-    burst(rearX, rearY, '#fff1a0', 6, 55);
-    soundSting();
-  }
-
   function resolveEnemyContact(enemy, collection, points) {
     const bodyContact = distance(enemy, state.bee) < enemy.radius + state.bee.radius;
     const stinger = {
       x: state.bee.x - Math.cos(state.bee.angle) * 35,
       y: state.bee.y - Math.sin(state.bee.angle) * 35
     };
-    const stingerContact = state.bee.stingTimer > 0 && distance(enemy, stinger) < enemy.radius + 11;
+    const stingerContact = state.keys.reverse && !state.bee.landing && distance(enemy, stinger) < enemy.radius + 11;
     if (!bodyContact && !stingerContact) return;
     if (state.bee.sheltered) {
       const away = Math.atan2(enemy.y - state.bee.y, enemy.x - state.bee.x);
@@ -372,8 +380,8 @@
       enemy.vy = (enemy.vy || 0) + Math.sin(away) * 55;
       return;
     }
-    if (stingerContact && enemy.lastSting !== state.stingSerial) {
-      enemy.lastSting = state.stingSerial;
+    if (stingerContact && enemy.lastSting !== state.reverseSerial) {
+      enemy.lastSting = state.reverseSerial;
       enemy.health--; enemy.hit = .18;
       const angle = Math.atan2(enemy.y - state.bee.y, enemy.x - state.bee.x);
       enemy.vx = (enemy.vx || 0) + Math.cos(angle) * 145;
@@ -460,6 +468,57 @@
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
   }
 
+  function updateGuards(dt) {
+    const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
+    for (const guard of state.guards) {
+      guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
+      let target = null, best = Infinity;
+      for (const enemy of enemies) {
+        const hiveDistance = Math.hypot(enemy.x, enemy.y);
+        const guardDistance = distance(guard, enemy);
+        if (hiveDistance < 520 && guardDistance < best) { best = guardDistance; target = enemy; }
+      }
+      guard.target = target;
+      let goalX, goalY, speed;
+      if (target) {
+        goalX = target.x; goalY = target.y; speed = 180;
+      } else {
+        const patrol = state.elapsed * .62 + guard.id * Math.PI;
+        goalX = Math.cos(patrol) * 112; goalY = Math.sin(patrol) * 82; speed = 115;
+      }
+      const desired = Math.atan2(goalY - guard.y, goalX - guard.x);
+      guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
+      guard.vx += Math.cos(guard.angle) * speed * dt * 3;
+      guard.vy += Math.sin(guard.angle) * speed * dt * 3;
+      guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
+      guard.x += guard.vx * dt; guard.y += guard.vy * dt;
+
+      if (target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
+        target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
+        const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
+        burst(impactX, impactY, '#83d8e3', 10, 110); soundHit();
+        if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); }
+        if (guard.health <= 0) {
+          burst(guard.x, guard.y, '#78d1db', 22, 165);
+          state.guardRespawns.push({ id: guard.id, timer: 4.5 });
+          soundGuardDown();
+        }
+      }
+    }
+    state.guards = state.guards.filter(guard => guard.health > 0);
+    for (const respawn of state.guardRespawns) {
+      respawn.timer -= dt;
+      if (respawn.timer <= 0) {
+        state.guards.push(makeGuard(respawn.id)); burst(0, 0, '#8ee6e9', 16, 105);
+        showHint('A HIVE GUARD HAS RETURNED', 1.4); soundGuardReturn();
+      }
+    }
+    state.guardRespawns = state.guardRespawns.filter(respawn => respawn.timer > 0);
+    state.wasps = state.wasps.filter(enemy => enemy.health > 0);
+    state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0);
+    state.spiders = state.spiders.filter(enemy => enemy.health > 0);
+  }
+
   function updateFlowers(dt) {
     for (const flower of state.flowers) {
       flower.sway += dt * .8;
@@ -518,7 +577,7 @@
     state.hintTimer -= dt;
     if (state.hintTimer <= 0) hintEl.classList.remove('visible');
     state.flash = Math.max(0, state.flash - dt); state.shake *= Math.pow(.035, dt);
-    updateFlowers(dt); updateBee(dt); updateEnemies(dt); updateParticles(dt);
+    updateFlowers(dt); updateBee(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt);
   }
 
   function drawGround() {
@@ -601,14 +660,32 @@
     ctx.beginPath(); ctx.ellipse(0, 5, 13, 21, 0, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.strokeStyle = '#302519'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-11, 1); ctx.lineTo(11, 1); ctx.moveTo(-11, 11); ctx.lineTo(11, 11); ctx.stroke();
     ctx.fillStyle = '#3a2a1b'; ctx.beginPath(); ctx.arc(0, -13, 11, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#302519'; ctx.beginPath(); ctx.moveTo(-4, 25); ctx.lineTo(0, bee.stingTimer > 0 ? 39 : 31); ctx.lineTo(4, 25); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#302519'; ctx.beginPath(); ctx.moveTo(-4, 25); ctx.lineTo(0, state.keys.reverse && !bee.landing ? 43 : 31); ctx.lineTo(4, 25); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#302519'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-5, -20); ctx.quadraticCurveTo(-10, -29, -14, -27); ctx.moveTo(5, -20); ctx.quadraticCurveTo(10, -29, 14, -27); ctx.stroke();
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(-4, -15, 2, 0, TAU); ctx.arc(4, -15, 2, 0, TAU); ctx.fill();
     if (bee.nectar) {
       for (let i = 0; i < bee.nectar; i++) { ctx.fillStyle = '#ffe560'; ctx.beginPath(); ctx.arc((i - (bee.nectar - 1) / 2) * 7, 23, 3, 0, TAU); ctx.fill(); }
     }
-    if (bee.stingTimer > 0) { ctx.strokeStyle = 'rgba(255,238,101,.72)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 3, 28 + Math.sin(state.elapsed * 35) * 3, 0, TAU); ctx.stroke(); }
+    if (state.keys.reverse && !bee.landing) { ctx.strokeStyle = 'rgba(255,238,101,.72)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 5, 29 + Math.sin(state.elapsed * 35) * 3, 0, TAU); ctx.stroke(); }
     ctx.restore();
+  }
+
+  function drawGuard(guard) {
+    if (!onScreen(guard, 45)) return;
+    const p = worldToScreen(guard);
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(guard.angle + Math.PI / 2); ctx.scale(.82, .82);
+    const flap = Math.sin(guard.wing) * .4;
+    ctx.fillStyle = 'rgba(222,249,247,.76)'; ctx.strokeStyle = 'rgba(38,92,92,.5)'; ctx.lineWidth = 1.5;
+    ctx.save(); ctx.rotate(-.55 - flap); ctx.beginPath(); ctx.ellipse(-15, -1, 10, 20, -.4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.rotate(.55 + flap); ctx.beginPath(); ctx.ellipse(15, -1, 10, 20, .4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = guard.hit ? '#fff' : '#eeb51d'; ctx.strokeStyle = '#26332d'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(0, 5, 13, 21, 0, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = '#247887'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-11, 1); ctx.lineTo(11, 1); ctx.moveTo(-11, 11); ctx.lineTo(11, 11); ctx.stroke();
+    ctx.fillStyle = '#26332d'; ctx.beginPath(); ctx.arc(0, -13, 11, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#7fe3ea'; ctx.beginPath(); ctx.arc(0, -14, 4, 0, TAU); ctx.fill();
+    ctx.restore();
+    ctx.save(); ctx.translate(p.x, p.y - 27); ctx.fillStyle = 'rgba(25,53,44,.35)'; ctx.fillRect(-14, 0, 28, 3);
+    ctx.fillStyle = '#82e1e6'; ctx.fillRect(-14, 0, 28 * guard.health / guard.maxHealth, 3); ctx.restore();
   }
 
   function drawWasp(wasp) {
@@ -687,6 +764,7 @@
     for (const spider of state.spiders) drawSpider(spider);
     for (const wasp of state.wasps) drawWasp(wasp);
     for (const dragon of state.dragonflies) drawDragonfly(dragon);
+    for (const guard of state.guards) drawGuard(guard);
     drawParticles();
     if (state.bee) drawBee(state.bee);
     if (state.running) drawMarkers();
@@ -725,7 +803,7 @@
     state.wingGain.gain.cancelScheduledValues(now); state.wingGain.gain.linearRampToValueAtTime(active ? .022 : .004, now + .08);
     state.wingOsc.frequency.linearRampToValueAtTime(active ? 128 : 92, now + .08);
   }
-  const soundSting = () => { tone(620, .09, 'square', .035, .48); tone(1100, .05, 'triangle', .018, .7); };
+  const soundReverseBurst = () => { tone(420, .1, 'square', .026, .7); tone(720, .08, 'triangle', .016, .75); };
   const soundHit = () => tone(210, .08, 'square', .04, .55);
   const soundEnemyDown = () => { tone(260, .2, 'sawtooth', .05, .3); tone(520, .16, 'triangle', .025, .5); };
   const soundCollect = () => { tone(660, .13, 'sine', .04, 1.5); setTimeout(() => tone(940, .15, 'sine', .035, 1.25), 70); };
@@ -735,13 +813,15 @@
   const soundSwoop = () => tone(310, .36, 'sawtooth', .035, .24);
   const soundHurt = () => { tone(170, .35, 'square', .06, .25); tone(95, .42, 'sawtooth', .04, .5); };
   const soundDay = () => { tone(330, .3, 'sine', .035, 1.5); setTimeout(() => tone(495, .35, 'triangle', .04, 1.35), 120); };
+  const soundGuardDown = () => { tone(240, .26, 'triangle', .04, .35); tone(120, .32, 'sine', .025, .5); };
+  const soundGuardReturn = () => { tone(520, .18, 'sine', .035, 1.45); setTimeout(() => tone(760, .2, 'triangle', .025, 1.2), 80); };
 
   function togglePause() {
     if (!state.running) return;
     state.paused = !state.paused; pauseLabel.classList.toggle('visible', state.paused); updateWingSound(false);
   }
 
-  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ArrowDown: 'reverse', s: 'reverse', S: 'reverse', ' ': 'land', e: 'sting', E: 'sting' };
+  const keyMap = { ArrowLeft: 'left', a: 'left', A: 'left', ArrowRight: 'right', d: 'right', D: 'right', ArrowUp: 'thrust', w: 'thrust', W: 'thrust', ArrowDown: 'reverse', s: 'reverse', S: 'reverse', ' ': 'land' };
   addEventListener('keydown', event => {
     if (keyMap[event.key]) { state.keys[keyMap[event.key]] = true; event.preventDefault(); unlockAudio(); }
     if ((event.key === 'p' || event.key === 'P' || event.key === 'Escape') && !event.repeat) togglePause();

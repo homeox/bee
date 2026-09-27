@@ -1,4 +1,4 @@
-const CACHE = 'bee-v2';
+const CACHE = 'bee-v3';
 const ASSETS = ['./', './index.html', './styles.css', './tuning.js', './game.js', './icon.svg', './manifest.webmanifest'];
 self.addEventListener('install', event => { event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', event => { event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key)))).then(() => self.clients.claim())); });

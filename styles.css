@@ -99,7 +99,6 @@ kbd { min-width: 23px; padding: 5px; border: 2px solid rgba(48,65,32,.45); borde
   .touch-controls button { pointer-events: auto; width: clamp(58px, 16vw, 78px); height: clamp(58px, 16vw, 78px); border: 2px solid rgba(255,249,206,.58); border-radius: 50%; color: #fff8dc; background: rgba(36,93,55,.58); box-shadow: inset 0 0 18px rgba(255,255,255,.07), 0 4px 14px rgba(23,65,34,.2); font: 800 32px/1 "Baloo 2", sans-serif; -webkit-tap-highlight-color: transparent; }
   .touch-controls button.active { background: rgba(255,194,28,.86); color: #3e3014; transform: scale(.95); }
   .touch-controls .land-button { width: clamp(66px, 18vw, 86px); height: clamp(66px, 18vw, 86px); border-color: rgba(255,226,105,.82); background: rgba(166,105,12,.68); font-size: 10px; letter-spacing: .06em; }
-  .touch-controls .sting-button { width: clamp(54px, 14vw, 68px); height: clamp(54px, 14vw, 68px); color: #ffe56f; }
   .touch-controls .fly-button { font-size: 20px; }
   .touch-controls .reverse-button { width: clamp(46px, 12vw, 58px); height: clamp(46px, 12vw, 58px); font-size: 16px; }
   .icon-button { bottom: auto; top: max(85px, calc(env(safe-area-inset-top) + 81px)); width: 34px; height: 34px; }
@@ -113,5 +112,4 @@ kbd { min-width: 23px; padding: 5px; border: 2px solid rgba(48,65,32,.45); borde
   .touch-controls button { width: 49px; height: 49px; }
   .touch-controls .reverse-button { width: 42px; height: 42px; }
   .touch-controls .land-button { width: 59px; height: 59px; }
-  .touch-controls .sting-button { width: 47px; height: 47px; }
 }
