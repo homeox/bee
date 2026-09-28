@@ -1,1 +1,1 @@
-self.BEE_VERSION = '0.5.1';
+self.BEE_VERSION = '0.6.0';

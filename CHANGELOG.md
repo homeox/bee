@@ -5,6 +5,20 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-28
+
+### Added
+
+- Anything caught in a web can now slowly wriggle free. A trapped bee or insect
+  pushes outward with a slow wobble and slips loose after roughly ten seconds,
+  so a spider busy eating someone else gives you a chance to escape — but if it
+  is not busy, it will reach you first. Applies to the player, helper bees,
+  wasps, and dragonflies alike.
+- Spiders now eat anything caught in their web, not just wasps and dragonflies.
+  A tangled helper bee or the tangled player is hunted and bitten until it dies.
+  A helper eaten this way still queues its normal nectar respawn, via the shared
+  `killGuard` path, so the colony can recover it.
+
 ## [0.5.1] - 2026-09-28
 
 ### Fixed

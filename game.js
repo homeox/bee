@@ -138,6 +138,15 @@ const colonyEl = document.querySelector('#colony-count');
     return null;
   }
 
+  function webWiggle(entity, web, dt, phase, damp) {
+    const away = Math.atan2(entity.y - web.y, entity.x - web.x);
+    const lateral = away + Math.PI / 2;
+    const wobble = Math.sin(state.elapsed * 6 + phase) * .8;
+    entity.vx += (Math.cos(away) + Math.cos(lateral) * wobble) * 22 * dt;
+    entity.vy += (Math.sin(away) + Math.sin(lateral) * wobble) * 22 * dt;
+    entity.vx *= Math.pow(damp, dt); entity.vy *= Math.pow(damp, dt);
+  }
+
   function spawnWasp() {
     if (!TUNING.features.wasps || !state.bee) return null;
     const angle = random(0, TAU);
@@ -279,6 +288,14 @@ const colonyEl = document.querySelector('#colony-count');
     updateHud();
   }
 
+  function killGuard(guard) {
+    if (guard.dead) return;
+    guard.dead = true;
+    burst(guard.x, guard.y, '#78d1db', 22, 165);
+    state.guardRespawns.push({ id: guard.id, tier: guard.tier, timer: 4.5, notified: false });
+    soundGuardDown();
+  }
+
   function edgePressure(value, size, zone, inset) {
     const ramp = Math.max(1, zone - inset);
     if (value < zone) return -clamp((zone - value) / ramp, 0, 1);
@@ -346,13 +363,11 @@ const colonyEl = document.querySelector('#colony-count');
     const nowSpeed = Math.hypot(bee.vx, bee.vy);
     if (nowSpeed > maxSpeed) { bee.vx *= maxSpeed / nowSpeed; bee.vy *= maxSpeed / nowSpeed; }
 
-    let webbed = false;
-    for (const web of state.webs) {
-      if (distance(bee, web) < web.radius * .75) { webbed = true; break; }
-    }
-    if (webbed) {
-      bee.vx *= Math.pow(.14, dt); bee.vy *= Math.pow(.14, dt);
-      if (Math.random() < dt * 2) showHint('TANGLED! KEEP FLYING TO BREAK FREE', 1.2);
+    const beeWeb = tangledInWeb(bee);
+    bee.tangled = Boolean(beeWeb);
+    if (beeWeb) {
+      webWiggle(bee, beeWeb, dt, 0, .14);
+      if (Math.random() < dt * 2) showHint('TANGLED! KEEP MOVING TO BREAK FREE', 1.2);
     }
 
     bee.x += bee.vx * dt; bee.y += bee.vy * dt;
@@ -583,11 +598,8 @@ const colonyEl = document.querySelector('#colony-count');
         wasp.vx += Math.cos(wasp.angle) * speed * dt * 2.2;
         wasp.vy += Math.sin(wasp.angle) * speed * dt * 2.2;
       }
-      if (waspWeb) {
-        const away = Math.atan2(wasp.y - waspWeb.y, wasp.x - waspWeb.x);
-        wasp.vx += Math.cos(away) * 40 * dt; wasp.vy += Math.sin(away) * 40 * dt;
-      }
-      wasp.vx *= Math.pow(waspWeb ? .06 : .14, dt); wasp.vy *= Math.pow(waspWeb ? .06 : .14, dt);
+      if (waspWeb) webWiggle(wasp, waspWeb, dt, wasp.phase, .06);
+      else { wasp.vx *= Math.pow(.14, dt); wasp.vy *= Math.pow(.14, dt); }
       wasp.x += wasp.vx * dt; wasp.y += wasp.vy * dt;
       resolveEnemyContact(wasp, state.wasps, 1);
     }
@@ -606,9 +618,7 @@ const colonyEl = document.querySelector('#colony-count');
         dragon.swoop = random(2.5, 4.1);
         soundSwoop();
       } else if (dragonWeb) {
-        const away = Math.atan2(dragon.y - dragonWeb.y, dragon.x - dragonWeb.x);
-        dragon.vx += Math.cos(away) * 45 * dt; dragon.vy += Math.sin(away) * 45 * dt;
-        dragon.vx *= Math.pow(.07, dt); dragon.vy *= Math.pow(.07, dt);
+        webWiggle(dragon, dragonWeb, dt, dragon.phase, .06);
       } else {
         dragon.vx *= Math.pow(.84, dt); dragon.vy *= Math.pow(.84, dt);
       }
@@ -624,19 +634,36 @@ const colonyEl = document.querySelector('#colony-count');
     for (const spider of state.spiders) {
       spider.cooldown -= dt; spider.phase += dt * 4;
       const catchRadius = (spider.webRadius || 90) * .8;
-      let prey = null, preyDistance = Infinity;
+      const home = { x: spider.homeX, y: spider.homeY };
+      const caught = [];
       for (const enemy of [...state.wasps, ...state.dragonflies]) {
-        if (enemy.health <= 0) continue;
-        const d = distance(enemy, { x: spider.homeX, y: spider.homeY });
-        if (d < catchRadius && d < preyDistance) { preyDistance = d; prey = enemy; }
+        if (enemy.health > 0 && enemy.tangled) caught.push(enemy);
+      }
+      for (const guard of state.guards) {
+        if (guard.health > 0 && guard.tangled) caught.push(guard);
+      }
+      if (state.bee.tangled && !state.bee.sheltered) caught.push(state.bee);
+      let prey = null, preyDistance = Infinity;
+      for (const target of caught) {
+        if (distance(target, home) >= catchRadius) continue;
+        const spiderDistance = distance(spider, target);
+        if (spiderDistance < preyDistance) { preyDistance = spiderDistance; prey = target; }
       }
       if (prey) {
         const angle = Math.atan2(prey.y - spider.y, prey.x - spider.x);
         spider.vx += Math.cos(angle) * 150 * dt * 3; spider.vy += Math.sin(angle) * 150 * dt * 3;
         if (distance(spider, prey) < spider.radius + prey.radius + 4 && spider.cooldown <= 0) {
-          prey.health--; prey.hit = .2; spider.cooldown = .9;
+          spider.cooldown = .9;
           burst(prey.x, prey.y, '#7ad0c0', 9, 80);
-          if (prey.health <= 0) { burst(prey.x, prey.y, '#5d4031', 18, 140); soundEnemyDown(); }
+          if (prey === state.bee) {
+            damageBee(spider.x, spider.y, 1);
+          } else {
+            prey.health--; prey.hit = .2;
+            if (prey.health <= 0) {
+              if (state.guards.includes(prey)) killGuard(prey);
+              else { burst(prey.x, prey.y, '#5d4031', 18, 140); soundEnemyDown(); }
+            }
+          }
         }
       } else {
         const spiderTarget = nearestChaseable(spider);
@@ -663,10 +690,11 @@ const colonyEl = document.querySelector('#colony-count');
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
     let helperDeposits = 0;
     const guardsBefore = state.guards.length;
-    const roster = [...state.guards].sort((a, b) => a.id - b.id);
+    const roster = state.guards.filter(guard => guard.health > 0).sort((a, b) => a.id - b.id);
     const foragerId = roster.length >= 2 ? roster[0].id : null;
     const hiveGuardId = roster.length >= 2 ? roster[1].id : null;
     for (const guard of state.guards) {
+      if (guard.health <= 0) continue;
       guard.role = guard.id === foragerId ? 'forage' : guard.id === hiveGuardId ? 'guard' : 'alternate';
       guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
       let target = null, targetKind = 'patrol', best = Infinity;
@@ -716,9 +744,7 @@ const colonyEl = document.querySelector('#colony-count');
         }
       } else if (guardWeb) {
         guard.actionTime = 0;
-        const away = Math.atan2(guard.y - guardWeb.y, guard.x - guardWeb.x);
-        guard.vx += Math.cos(away) * 40 * dt; guard.vy += Math.sin(away) * 40 * dt;
-        guard.vx *= Math.pow(.06, dt); guard.vy *= Math.pow(.06, dt);
+        webWiggle(guard, guardWeb, dt, guard.id, .06);
       } else {
         guard.actionTime = 0;
         const ease = arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1;
@@ -732,11 +758,7 @@ const colonyEl = document.querySelector('#colony-count');
         const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
         burst(impactX, impactY, '#83d8e3', 10, 110); soundHit();
         if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target); }
-        if (guard.health <= 0) {
-          burst(guard.x, guard.y, '#78d1db', 22, 165);
-          state.guardRespawns.push({ id: guard.id, tier: guard.tier, timer: 4.5, notified: false });
-          soundGuardDown();
-        }
+        if (guard.health <= 0) killGuard(guard);
       }
     }
     state.guards = state.guards.filter(guard => guard.health > 0);
