@@ -348,7 +348,7 @@ const colonyEl = document.querySelector('#colony-count');
     const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
     dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
     const homeHelpers = state.guards.filter(guard => guard.colonyId === 0).length;
-    if (colonyEl) colonyEl.textContent = `${homeHelpers + 1}/${availableHelpers + 1}${state.hives.length > 1 ? ` · ${state.hives.length} HIVES` : ''}`;
+    if (colonyEl) colonyEl.textContent = `${homeHelpers + 1}/${availableHelpers + 1}`;
   }
 
   function spawnUnlockedHelpers(colony = state.colonies[0]) {
