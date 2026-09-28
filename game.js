@@ -128,9 +128,14 @@ const colonyEl = document.querySelector('#colony-count');
 
   function makeSpider(web) {
     return {
-      x: web.x + random(-18, 18), y: web.y + random(-18, 18), homeX: web.x, homeY: web.y,
+      x: web.x + random(-18, 18), y: web.y + random(-18, 18), homeX: web.x, homeY: web.y, webRadius: web.radius,
       vx: 0, vy: 0, radius: 19, health: 3, maxHealth: 3, cooldown: random(0, 2), angle: random(0, TAU), phase: random(0, TAU)
     };
+  }
+
+  function tangledInWeb(point) {
+    for (const web of state.webs) if (distance(point, web) < web.radius * .75) return web;
+    return null;
   }
 
   function spawnWasp() {
@@ -139,8 +144,8 @@ const colonyEl = document.querySelector('#colony-count');
     const radius = random(520, 760);
     const wasp = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
-      vx: 0, vy: 0, angle: angle + Math.PI, radius: 24, health: 2 + Math.floor(state.day / 6),
-      maxHealth: 2 + Math.floor(state.day / 6), phase: random(0, TAU), hit: 0, lastSting: -1
+      vx: 0, vy: 0, angle: angle + Math.PI, radius: 24, health: 4 + Math.floor(state.day / 6),
+      maxHealth: 4 + Math.floor(state.day / 6), phase: random(0, TAU), hit: 0, lastSting: -1
     };
     state.wasps.push(wasp);
     showHint('⚠ WASP IN THE MEADOW', 2.4);
@@ -155,7 +160,7 @@ const colonyEl = document.querySelector('#colony-count');
     const dragonfly = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
       vx: -Math.cos(angle) * 220, vy: -Math.sin(angle) * 220, angle: angle + Math.PI,
-      radius: 25, health: 4, maxHealth: 4, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1
+      radius: 25, health: 2, maxHealth: 2, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1
     };
     state.dragonflies.push(dragonfly);
     showHint('⚠ DRAGONFLY SWOOP', 2.4);
@@ -538,7 +543,7 @@ const colonyEl = document.querySelector('#colony-count');
       }
       return;
     }
-    if (enemy.health > 0) damageBee(enemy.x, enemy.y);
+    if (enemy.health > 0) damageBee(enemy.x, enemy.y, points);
   }
 
   function updateEnemies(dt) {
@@ -568,37 +573,49 @@ const colonyEl = document.querySelector('#colony-count');
     for (const wasp of state.wasps) {
       wasp.hit = Math.max(0, wasp.hit - dt);
       wasp.phase += dt * 7;
+      const waspWeb = tangledInWeb(wasp);
+      wasp.tangled = Boolean(waspWeb);
       const waspTarget = nearestChaseable(wasp);
-      if (waspTarget) {
+      if (waspTarget && !waspWeb) {
         const desired = Math.atan2(waspTarget.y - wasp.y, waspTarget.x - wasp.x) + Math.sin(wasp.phase) * .28;
         wasp.angle += angleDelta(wasp.angle, desired) * Math.min(1, dt * 3.5);
         const speed = 105 + state.day * 3;
         wasp.vx += Math.cos(wasp.angle) * speed * dt * 2.2;
         wasp.vy += Math.sin(wasp.angle) * speed * dt * 2.2;
       }
-      wasp.vx *= Math.pow(.14, dt); wasp.vy *= Math.pow(.14, dt);
+      if (waspWeb) {
+        const away = Math.atan2(wasp.y - waspWeb.y, wasp.x - waspWeb.x);
+        wasp.vx += Math.cos(away) * 40 * dt; wasp.vy += Math.sin(away) * 40 * dt;
+      }
+      wasp.vx *= Math.pow(waspWeb ? .06 : .14, dt); wasp.vy *= Math.pow(waspWeb ? .06 : .14, dt);
       wasp.x += wasp.vx * dt; wasp.y += wasp.vy * dt;
-      resolveEnemyContact(wasp, state.wasps, 2);
+      resolveEnemyContact(wasp, state.wasps, 1);
     }
 
     for (const dragon of state.dragonflies) {
       dragon.hit = Math.max(0, dragon.hit - dt);
       dragon.phase += dt * 18;
       dragon.swoop -= dt;
+      const dragonWeb = tangledInWeb(dragon);
+      dragon.tangled = Boolean(dragonWeb);
       const dragonTarget = nearestChaseable(dragon);
-      if (dragon.swoop <= 0 && dragonTarget) {
+      if (dragon.swoop <= 0 && dragonTarget && !dragonWeb) {
         const aim = Math.atan2(dragonTarget.y - dragon.y, dragonTarget.x - dragon.x);
         dragon.vx = Math.cos(aim) * (360 + state.day * 4);
         dragon.vy = Math.sin(aim) * (360 + state.day * 4);
         dragon.swoop = random(2.5, 4.1);
         soundSwoop();
+      } else if (dragonWeb) {
+        const away = Math.atan2(dragon.y - dragonWeb.y, dragon.x - dragonWeb.x);
+        dragon.vx += Math.cos(away) * 45 * dt; dragon.vy += Math.sin(away) * 45 * dt;
+        dragon.vx *= Math.pow(.07, dt); dragon.vy *= Math.pow(.07, dt);
       } else {
         dragon.vx *= Math.pow(.84, dt); dragon.vy *= Math.pow(.84, dt);
       }
       dragon.angle = Math.atan2(dragon.vy, dragon.vx);
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
-      resolveEnemyContact(dragon, state.dragonflies, 4);
-      if (dragonTarget && distance(dragon, dragonTarget) > 1500) {
+      resolveEnemyContact(dragon, state.dragonflies, 2);
+      if (dragonTarget && !dragonWeb && distance(dragon, dragonTarget) > 1500) {
         const angle = random(0, TAU);
         dragon.x = dragonTarget.x + Math.cos(angle) * 820; dragon.y = dragonTarget.y + Math.sin(angle) * 820;
       }
@@ -606,10 +623,27 @@ const colonyEl = document.querySelector('#colony-count');
 
     for (const spider of state.spiders) {
       spider.cooldown -= dt; spider.phase += dt * 4;
-      const spiderTarget = nearestChaseable(spider);
-      if (spiderTarget && distance(spider, spiderTarget) < 260 && spider.cooldown <= 0) {
-        const angle = Math.atan2(spiderTarget.y - spider.y, spiderTarget.x - spider.x);
-        spider.vx += Math.cos(angle) * 290; spider.vy += Math.sin(angle) * 290; spider.cooldown = 2.4;
+      const catchRadius = (spider.webRadius || 90) * .8;
+      let prey = null, preyDistance = Infinity;
+      for (const enemy of [...state.wasps, ...state.dragonflies]) {
+        if (enemy.health <= 0) continue;
+        const d = distance(enemy, { x: spider.homeX, y: spider.homeY });
+        if (d < catchRadius && d < preyDistance) { preyDistance = d; prey = enemy; }
+      }
+      if (prey) {
+        const angle = Math.atan2(prey.y - spider.y, prey.x - spider.x);
+        spider.vx += Math.cos(angle) * 150 * dt * 3; spider.vy += Math.sin(angle) * 150 * dt * 3;
+        if (distance(spider, prey) < spider.radius + prey.radius + 4 && spider.cooldown <= 0) {
+          prey.health--; prey.hit = .2; spider.cooldown = .9;
+          burst(prey.x, prey.y, '#7ad0c0', 9, 80);
+          if (prey.health <= 0) { burst(prey.x, prey.y, '#5d4031', 18, 140); soundEnemyDown(); }
+        }
+      } else {
+        const spiderTarget = nearestChaseable(spider);
+        if (spiderTarget && distance(spider, spiderTarget) < 260 && spider.cooldown <= 0) {
+          const angle = Math.atan2(spiderTarget.y - spider.y, spiderTarget.x - spider.x);
+          spider.vx += Math.cos(angle) * 290; spider.vy += Math.sin(angle) * 290; spider.cooldown = 2.4;
+        }
       }
       const homeAngle = Math.atan2(spider.homeY - spider.y, spider.homeX - spider.x);
       if (distance(spider, { x: spider.homeX, y: spider.homeY }) > 140) {
@@ -618,7 +652,7 @@ const colonyEl = document.querySelector('#colony-count');
       spider.vx *= Math.pow(.11, dt); spider.vy *= Math.pow(.11, dt);
       spider.x += spider.vx * dt; spider.y += spider.vy * dt;
       spider.angle = Math.atan2(spider.vy || Math.sin(spider.phase), spider.vx || Math.cos(spider.phase));
-      resolveEnemyContact(spider, state.spiders, 3);
+      resolveEnemyContact(spider, state.spiders, 1);
     }
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
     state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0);
@@ -737,10 +771,10 @@ const colonyEl = document.querySelector('#colony-count');
     });
   }
 
-  function damageBee(fromX, fromY) {
+  function damageBee(fromX, fromY, points = 1) {
     if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0 || state.bee.sheltered) return;
     state.bee.invulnerable = 2;
-    state.lives--;
+    state.lives -= points;
     const angle = Math.atan2(state.bee.y - fromY, state.bee.x - fromX);
     state.bee.vx = Math.cos(angle) * 230; state.bee.vy = Math.sin(angle) * 230;
     state.bee.nectar = Math.max(0, state.bee.nectar - 1);

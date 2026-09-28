@@ -5,6 +5,23 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-28
+
+### Added
+
+- Spider webs now catch everything except spiders. Wasps and dragonflies that
+  fly into a web become tangled: their steering is cut and their speed
+  collapses, so they crawl free only slowly instead of charging straight
+  through. Webs marked with `tangled` state for both enemy types.
+- Spiders now hunt and eat prey caught in their own web, biting roughly every
+  0.9 seconds until it dies. Spiders stay immune to webs, including their own.
+
+### Fixed
+
+- A tangled dragonfly no longer teleports out of a web. The far-from-target
+  relocation now skips entangled dragonflies, so they cannot escape by jumping
+  several thousand pixels away.
+
 ## [0.4.1] - 2026-09-28
 
 ### Fixed
