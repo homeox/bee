@@ -44,6 +44,7 @@ const colonyEl = document.querySelector('#colony-count');
     score: 0, totalNectar: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
     flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
+    obstacles: [], worldMap: { cell: 500, cells: {} }, mapTimer: 0,
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0,
@@ -128,7 +129,7 @@ const colonyEl = document.querySelector('#colony-count');
 
   function makeSpider(web) {
     return {
-      x: web.x + random(-18, 18), y: web.y + random(-18, 18), homeX: web.x, homeY: web.y, webRadius: web.radius,
+      x: web.x + random(-18, 18), y: web.y + random(-18, 18), homeX: web.x, homeY: web.y, webRadius: web.radius, web,
       vx: 0, vy: 0, radius: 19, health: 3, maxHealth: 3, cooldown: random(0, 2), angle: random(0, TAU), phase: random(0, TAU)
     };
   }
@@ -145,6 +146,49 @@ const colonyEl = document.querySelector('#colony-count');
     entity.vx += (Math.cos(away) + Math.cos(lateral) * wobble) * 22 * dt;
     entity.vy += (Math.sin(away) + Math.sin(lateral) * wobble) * 22 * dt;
     entity.vx *= Math.pow(damp, dt); entity.vy *= Math.pow(damp, dt);
+  }
+
+  function mapCell(x, y) {
+    const size = state.worldMap.cell;
+    const gx = Math.floor(x / size), gy = Math.floor(y / size);
+    const key = gx + ':' + gy;
+    let entry = state.worldMap.cells[key];
+    if (!entry) { entry = { gx, gy, seen: false, features: [] }; state.worldMap.cells[key] = entry; }
+    return entry;
+  }
+
+  function registerMapFeature(kind, x, y, radius) {
+    mapCell(x, y).features.push({ kind, x, y, radius });
+  }
+
+  function updateWorldMap(dt) {
+    state.mapTimer -= dt;
+    if (state.mapTimer > 0) return;
+    state.mapTimer = .25;
+    mapCell(state.bee.x, state.bee.y).seen = true;
+    for (const guard of state.guards) mapCell(guard.x, guard.y).seen = true;
+  }
+
+  function growWeb(spider) {
+    if (!spider.web) return;
+    spider.web.kills = (spider.web.kills || 0) + 1;
+    spider.web.radius = Math.min(240, spider.web.radius + 9);
+    spider.webRadius = spider.web.radius;
+  }
+
+  function resolveObstacles(entity) {
+    const body = entity.radius || 12;
+    for (const obstacle of state.obstacles) {
+      const dx = entity.x - obstacle.x, dy = entity.y - obstacle.y;
+      const gap = Math.hypot(dx, dy);
+      const min = obstacle.radius + body;
+      if (gap >= min || gap < .001) continue;
+      const nx = dx / gap, ny = dy / gap;
+      entity.x = obstacle.x + nx * min;
+      entity.y = obstacle.y + ny * min;
+      const into = entity.vx * nx + entity.vy * ny;
+      if (into < 0) { entity.vx -= into * nx; entity.vy -= into * ny; }
+    }
   }
 
   function spawnWasp() {
@@ -184,6 +228,9 @@ const colonyEl = document.querySelector('#colony-count');
     for (let i = 0; i < flowerCount; i++) state.flowers.push(makeFlower(i));
     state.webs = [];
     state.spiders = [];
+    state.obstacles = [];
+    state.worldMap = { cell: 500, cells: {} };
+    state.mapTimer = 0;
     if (TUNING.features.webs || TUNING.features.spiders) {
       const count = TUNING.features.webs ? 13 : 8;
       for (let i = 0; i < count; i++) {
@@ -191,6 +238,14 @@ const colonyEl = document.querySelector('#colony-count');
         if (TUNING.features.webs) state.webs.push(web);
         if (TUNING.features.spiders && (i % 2 === 0 || !TUNING.features.webs)) state.spiders.push(makeSpider(web));
       }
+    }
+    for (const web of state.webs) registerMapFeature('web', web.x, web.y, web.radius);
+    for (let i = 0; i < 14; i++) {
+      const kind = Math.random() < .45 ? 'tree' : 'bush';
+      const spot = randomMeadowPoint(520, WORLD_RADIUS - 220);
+      const radius = kind === 'tree' ? random(30, 44) : random(24, 36);
+      state.obstacles.push({ x: spot.x, y: spot.y, radius, kind, sway: random(0, TAU) });
+      registerMapFeature(kind, spot.x, spot.y, radius);
     }
   }
 
@@ -386,6 +441,7 @@ const colonyEl = document.querySelector('#colony-count');
     }
 
     bee.x += bee.vx * dt; bee.y += bee.vy * dt;
+    resolveObstacles(bee);
     const fromCenter = Math.hypot(bee.x, bee.y);
     if (fromCenter > WORLD_RADIUS) {
       const nx = bee.x / fromCenter, ny = bee.y / fromCenter;
@@ -616,6 +672,7 @@ const colonyEl = document.querySelector('#colony-count');
       if (waspWeb) webWiggle(wasp, waspWeb, dt, wasp.phase, .06);
       else { wasp.vx *= Math.pow(.14, dt); wasp.vy *= Math.pow(.14, dt); }
       wasp.x += wasp.vx * dt; wasp.y += wasp.vy * dt;
+      resolveObstacles(wasp);
       resolveEnemyContact(wasp, state.wasps, 1);
     }
 
@@ -642,6 +699,7 @@ const colonyEl = document.querySelector('#colony-count');
         dragon.vx *= Math.pow(.5, dt); dragon.vy *= Math.pow(.5, dt);
         dragon.angle = Math.atan2(dragon.vy, dragon.vx);
         dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
+        resolveObstacles(dragon);
         dragon.leaving += dt;
         if (distance(dragon, dragonTarget) > 1400 || dragon.leaving > 6) dragon.gone = true;
         continue;
@@ -661,6 +719,7 @@ const colonyEl = document.querySelector('#colony-count');
       }
       dragon.angle = Math.atan2(dragon.vy, dragon.vx);
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
+      resolveObstacles(dragon);
 
       const ate = !dragonWeb && dragonflyEat(dragon);
       if (ate) {
@@ -701,6 +760,7 @@ const colonyEl = document.querySelector('#colony-count');
           } else {
             prey.health--; prey.hit = .2;
             if (prey.health <= 0) {
+              growWeb(spider);
               if (state.guards.includes(prey)) killGuard(prey);
               else { burst(prey.x, prey.y, '#5d4031', 18, 140); soundEnemyDown(); }
             }
@@ -719,12 +779,16 @@ const colonyEl = document.querySelector('#colony-count');
       }
       spider.vx *= Math.pow(.11, dt); spider.vy *= Math.pow(.11, dt);
       spider.x += spider.vx * dt; spider.y += spider.vy * dt;
+      resolveObstacles(spider);
       spider.angle = Math.atan2(spider.vy || Math.sin(spider.phase), spider.vx || Math.cos(spider.phase));
       resolveEnemyContact(spider, state.spiders, 1);
     }
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
     state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0 && !enemy.gone);
+    const deadWebs = [];
+    for (const spider of state.spiders) if (spider.health <= 0 && spider.web) deadWebs.push(spider.web);
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
+    if (deadWebs.length) state.webs = state.webs.filter(web => deadWebs.indexOf(web) === -1);
   }
 
   function updateGuards(dt) {
@@ -794,6 +858,7 @@ const colonyEl = document.querySelector('#colony-count');
         guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
       }
       guard.x += guard.vx * dt; guard.y += guard.vy * dt;
+      resolveObstacles(guard);
       if (targetKind === 'enemy' && target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
         target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
         const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
@@ -896,7 +961,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.hintTimer -= dt;
     if (state.hintTimer <= 0) hintEl.classList.remove('visible');
     state.flash = Math.max(0, state.flash - dt); state.shake *= Math.pow(.035, dt);
-    updateFlowers(dt); updateBee(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt);
+    updateFlowers(dt); updateBee(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt); updateWorldMap(dt);
   }
 
   function drawGround() {
@@ -940,6 +1005,23 @@ const colonyEl = document.querySelector('#colony-count');
     for (const [y, width] of tiers) { ctx.beginPath(); ctx.roundRect(-width, y - 13, width * 2, 27, 13); ctx.fill(); ctx.stroke(); }
     ctx.fillStyle = '#39250d'; ctx.beginPath(); ctx.ellipse(0, 50, 26, 20, 0, Math.PI, TAU); ctx.fill();
     ctx.fillStyle = '#ffc927'; ctx.font = '800 13px "Nunito"'; ctx.textAlign = 'center'; ctx.fillText('HOME', 0, 91);
+    ctx.restore();
+  }
+
+  function drawObstacle(obstacle) {
+    if (!onScreen(obstacle, obstacle.radius + 40)) return;
+    const p = worldToScreen(obstacle);
+    ctx.save(); ctx.translate(p.x, p.y);
+    ctx.fillStyle = 'rgba(38,70,28,.2)';
+    ctx.beginPath(); ctx.ellipse(0, obstacle.radius * .34, obstacle.radius * .95, obstacle.radius * .45, 0, 0, TAU); ctx.fill();
+    if (obstacle.kind === 'tree') {
+      ctx.fillStyle = '#6f4a20';
+      ctx.beginPath(); ctx.roundRect(-obstacle.radius * .14, -obstacle.radius * .1, obstacle.radius * .28, obstacle.radius * .8, 5); ctx.fill();
+    }
+    const sway = Math.sin(state.elapsed * .7 + obstacle.sway) * 3;
+    ctx.fillStyle = obstacle.kind === 'tree' ? '#2f7a3a' : '#57a552';
+    ctx.strokeStyle = 'rgba(30,60,26,.35)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(sway, -obstacle.radius * .62, obstacle.radius * .8, 0, TAU); ctx.fill(); ctx.stroke();
     ctx.restore();
   }
 
@@ -1095,6 +1177,7 @@ const colonyEl = document.querySelector('#colony-count');
     drawGround();
     for (const web of state.webs) drawWeb(web);
     for (const flower of state.flowers) drawFlower(flower);
+    for (const obstacle of state.obstacles) drawObstacle(obstacle);
     drawHive();
     for (const spider of state.spiders) drawSpider(spider);
     for (const wasp of state.wasps) drawWasp(wasp);

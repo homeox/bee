@@ -5,6 +5,22 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] - 2026-09-28
+
+### Added
+
+- Persistent world state. Webs, spiders, and obstacles live in the world instead
+  of being recreated, and a world map records where they are.
+- Trees and bushes: 14 solid, persistent obstacles scattered thinly across the
+  meadow. They block the player, helper bees, and every enemy, and register on
+  the world map.
+- Spider webs grow with every kill the resident spider makes, and a web is
+  destroyed along with its spider. Spider-less webs persist indefinitely.
+- A world map (`state.worldMap`) covering 500-unit grid cells that marks a cell
+  as seen wherever the player or a helper bee travels, and records persistent
+  features (webs, trees, bushes). Nothing is drawn from it yet; it exists so
+  off-screen activity can be traced and a map rendered later.
+
 ## [0.8.0] - 2026-09-28
 
 ### Changed
