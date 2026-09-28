@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relocation now skips entangled dragonflies, so they cannot escape by jumping
   several thousand pixels away.
 
+### Changed
+
+- Enemy stat rebalance. Wasps are now the tough ones (4 HP, +1 per 6 days) and
+  dragonflies are fragile glass cannons (2 HP) that hit twice as hard — 2 lives
+  per contact versus 1 for a wasp or spider — while staying the fastest enemy in
+  the meadow. Previously this was inverted: dragonflies had 4 HP and were
+  sturdier than wasps.
+- Enemy contact damage is now actually applied. `resolveEnemyContact` was given
+  an attack value that was never used, so every enemy cost exactly one life
+  regardless of type; that value is now passed through to `damageBee`.
+
 ## [0.4.1] - 2026-09-28
 
 ### Fixed
