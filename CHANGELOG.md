@@ -5,6 +5,18 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-28
+
+### Changed
+
+- A dragonfly now hunts everything, not just colony bees. It targets the nearest
+  of the player, helper bees, wasps, and spiders, and its lethal dive one-shots
+  any of them. Eating anything still sates it and sends it off-screen.
+- Because it picks its target by proximity, a dragonfly will interpose itself in
+  a wasp swarm or clear a spider off its web rather than always coming for you.
+- Spiders are only created when the meadow is populated, so a spider eaten by a
+  dragonfly stays gone for the rest of the run.
+
 ## [0.7.0] - 2026-09-28
 
 ### Changed

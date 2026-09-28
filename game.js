@@ -297,6 +297,20 @@ const colonyEl = document.querySelector('#colony-count');
     soundGuardDown();
   }
 
+  function dragonflyEat(dragon) {
+    const canBitePlayer = state.bee.invulnerable <= 0 && !state.bee.sheltered && Boolean(TUNING.balance.playerDamage);
+    resolveEnemyContact(dragon, state.dragonflies, 99);
+    if (canBitePlayer && state.bee.invulnerable > 0) return true;
+    const reach = dragon.radius + 4;
+    for (const guard of state.guards) {
+      if (guard.health > 0 && distance(dragon, guard) < reach + guard.radius) { guard.health = 0; killGuard(guard); return true; }
+    }
+    for (const enemy of [...state.wasps, ...state.spiders]) {
+      if (enemy.health > 0 && distance(dragon, enemy) < reach + enemy.radius) { enemy.health = 0; return true; }
+    }
+    return false;
+  }
+
   function edgePressure(value, size, zone, inset) {
     const ramp = Math.max(1, zone - inset);
     if (value < zone) return -clamp((zone - value) / ramp, 0, 1);
@@ -610,7 +624,16 @@ const colonyEl = document.querySelector('#colony-count');
       dragon.phase += dt * 18;
       const dragonWeb = tangledInWeb(dragon);
       dragon.tangled = Boolean(dragonWeb);
-      const dragonTarget = nearestChaseable(dragon) || { x: 0, y: 0 };
+      const preyPool = [];
+      if (!state.bee.sheltered) preyPool.push(state.bee);
+      for (const guard of state.guards) if (guard.health > 0 && !guard.sheltered) preyPool.push(guard);
+      for (const enemy of [...state.wasps, ...state.spiders]) if (enemy.health > 0) preyPool.push(enemy);
+      let dragonTarget = null, dragonTargetDistance = Infinity;
+      for (const candidate of preyPool) {
+        const d = distance(dragon, candidate);
+        if (d < dragonTargetDistance) { dragonTargetDistance = d; dragonTarget = candidate; }
+      }
+      dragonTarget = dragonTarget || { x: 0, y: 0 };
 
       if (dragon.sated) {
         const away = Math.atan2(dragon.y - dragonTarget.y, dragon.x - dragonTarget.x);
@@ -639,19 +662,7 @@ const colonyEl = document.querySelector('#colony-count');
       dragon.angle = Math.atan2(dragon.vy, dragon.vx);
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
 
-      let ate = false;
-      if (!dragonWeb) {
-        const bitePossible = state.bee.invulnerable <= 0 && !state.bee.sheltered && Boolean(TUNING.balance.playerDamage);
-        resolveEnemyContact(dragon, state.dragonflies, 99);
-        ate = bitePossible && state.bee.invulnerable > 0;
-        if (!ate) {
-          for (const guard of state.guards) {
-            if (guard.health > 0 && distance(dragon, guard) < dragon.radius + guard.radius + 2) {
-              guard.health = 0; killGuard(guard); ate = true; break;
-            }
-          }
-        }
-      }
+      const ate = !dragonWeb && dragonflyEat(dragon);
       if (ate) {
         dragon.sated = true;
         burst(dragon.x, dragon.y, '#d94b31', 24, 170); soundEnemyDown();
