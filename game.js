@@ -417,7 +417,9 @@ const colonyEl = document.querySelector('#colony-count');
     bee.wasReversing = state.keys.reverse;
     const turn = (state.keys.left ? -1 : 0) + (state.keys.right ? 1 : 0);
     const speed = Math.hypot(bee.vx, bee.vy);
-    bee.angle += turn * (2.7 + Math.min(speed, 180) / 170) * dt;
+    const beeWeb = tangledInWeb(bee);
+    bee.tangled = Boolean(beeWeb);
+    bee.angle += turn * (2.7 + Math.min(speed, 180) / 170) * dt * (beeWeb ? .28 : 1);
     const reversePower = bee.reverseBurst > 0 ? 1.18 : .76;
     const drive = !bee.landing ? (state.keys.reverse ? -reversePower : state.keys.thrust ? 1 : 0) : 0;
     if (drive !== 0) {
@@ -433,8 +435,6 @@ const colonyEl = document.querySelector('#colony-count');
     const nowSpeed = Math.hypot(bee.vx, bee.vy);
     if (nowSpeed > maxSpeed) { bee.vx *= maxSpeed / nowSpeed; bee.vy *= maxSpeed / nowSpeed; }
 
-    const beeWeb = tangledInWeb(bee);
-    bee.tangled = Boolean(beeWeb);
     if (beeWeb) {
       webWiggle(bee, beeWeb, dt, 0, .14);
       if (Math.random() < dt * 2) showHint('TANGLED! KEEP MOVING TO BREAK FREE', 1.2);
@@ -717,7 +717,10 @@ const colonyEl = document.querySelector('#colony-count');
       } else {
         dragon.vx *= Math.pow(.84, dt); dragon.vy *= Math.pow(.84, dt);
       }
-      dragon.angle = Math.atan2(dragon.vy, dragon.vx);
+      const dragonFacing = Math.atan2(dragon.vy, dragon.vx);
+      dragon.angle = dragonWeb
+        ? dragon.angle + angleDelta(dragon.angle, dragonFacing) * Math.min(1, dt * 1.6)
+        : dragonFacing;
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
       resolveObstacles(dragon);
 
@@ -834,11 +837,11 @@ const colonyEl = document.querySelector('#colony-count');
       const desired = retro
         ? Math.atan2(guard.y - target.y, guard.x - target.x)
         : Math.atan2(goalY - guard.y, goalX - guard.x);
-      guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
       const goalDistance = Math.hypot(goalX - guard.x, goalY - guard.y);
       const landed = arrival > 0 && goalDistance < arrival && Math.hypot(guard.vx, guard.vy) < 70;
       const guardWeb = landed ? null : tangledInWeb(guard);
       guard.tangled = Boolean(guardWeb);
+      guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * (guardWeb ? 3 : 6));
       guard.sheltered = landed;
       guard.landScale += ((landed ? .68 : 1) - guard.landScale) * (1 - Math.exp(-10 * dt));
       if (landed) {
@@ -855,7 +858,7 @@ const colonyEl = document.querySelector('#colony-count');
         webWiggle(guard, guardWeb, dt, guard.id, .06);
       } else {
         guard.actionTime = 0;
-        const ease = retro ? Math.min(1, goalDistance / 90) : (arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1);
+        const ease = retro ? Math.max(0, Math.min(1, (goalDistance - 66) / 44)) : (arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1);
         const drive = retro ? -1 : 1;
         guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3 * drive;
         guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3 * drive;

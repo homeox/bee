@@ -5,6 +5,27 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.11.0] - 2026-09-28
+
+### Changed
+
+- A trapped bee now turns slowly as well as moving slowly. Webs previously only
+  sapped speed, so a caught bee could still whip its stinger around to face an
+  attacker. Tangled turning is cut to roughly a third of normal for the player,
+  helper bees, and dragonflies, letting the resident spider outflank anything
+  that was not already facing the right way.
+- A helper now holds at stinging distance from its target instead of driving all
+  the way into body contact.
+
+### Balance
+
+- Measured across 40 spider-versus-trapped-helper duels: spiders went from
+  winning 21/40 to 40/40. A trapped helper is routinely one sting short, dying
+  with the spider on 1 HP. A helper is a reactive fighter with no foresight, so
+  it cannot pre-empt an outflank — but the player can. Arriving tail-first with
+  the stinger already aimed and tapping reverse lands three stings and kills the
+  spider, verified.
+
 ## [0.10.0] - 2026-09-28
 
 ### Changed
