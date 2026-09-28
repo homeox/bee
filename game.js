@@ -268,9 +268,10 @@ const colonyEl = document.querySelector('#colony-count');
   function rewardKill(enemy) {
     if (enemy.rewarded) return;
     enemy.rewarded = true;
-    bankNectar(2, false);
+    state.score += 2;
     burst(enemy.x, enemy.y, '#ffd83f', 14, 130);
     showHint('+2 NECTAR', .8);
+    updateHud();
   }
 
   function edgePressure(value, size, zone, inset) {

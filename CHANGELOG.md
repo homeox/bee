@@ -5,6 +5,16 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-09-28
+
+### Fixed
+
+- Colony growth no longer counts combat rewards. Killing an enemy still banks 2
+  spendable nectar, but only nectar gathered from flowers advances the
+  one-helper-per-5-nectar milestone. Previously kill rewards fed the same total
+  that drives colony growth, which also feeds enemy scaling, so the colony could
+  balloon from combat alone without any foraging.
+
 ## [0.4.0] - 2026-09-28
 
 ### Added
