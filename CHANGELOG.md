@@ -5,6 +5,24 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-28
+
+### Added
+
+- Helper bees now land at a flower to gather and land at the hive to unload,
+  exactly like the player, so a working helper is hidden from enemies while it
+  is settled.
+- Enemy pressure now scales with nectar collected rather than the day counter:
+  the meadow starts nearly empty and fills up as the colony banks nectar.
+- Flowers are now consumed. A harvested flower disappears once the bee that
+  picked it has taken off, and fresh flowers grow elsewhere on a fixed timer
+  (`flowerSpawn`, default 6 seconds).
+
+### Changed
+
+- Removed in-place flower regrowth in favour of the consume-and-respawn cycle.
+- New tuning knobs: `flowerSpawn`, `enemyBase`, `enemyStep`, `dragonStep`.
+
 ## [0.2.1] - 2026-09-27
 
 ### Fixed

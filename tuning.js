@@ -26,7 +26,11 @@
     features: { wasps: enabled('wasps'), dragonflies: enabled('dragonflies'), spiders: enabled('spiders'), webs: enabled('webs') },
     balance: {
       flowers: number('flowers', 1, .5, 3), enemies: number('enemies', 1, .25, 3),
-      nectarCapacity: number('capacity', 3, 1, 8), playerDamage: flag('invincible', false) ? 0 : 1
+      nectarCapacity: number('capacity', 3, 1, 8), playerDamage: flag('invincible', false) ? 0 : 1,
+      flowerSpawn: number('flowerSpawn', 6, 1, 60),
+      enemyBaseline: number('enemyBase', 1, 0, 8),
+      enemyNectarStep: number('enemyStep', 5, 1, 30),
+      dragonflyNectarStep: number('dragonStep', 12, 1, 60)
     }
   };
 })();

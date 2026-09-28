@@ -93,7 +93,8 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     return {
       id, x: Math.cos(angle) * 92, y: Math.sin(angle) * 92, vx: 0, vy: 0, angle,
       radius: 14, health: 3, maxHealth: 3, attackCooldown: random(.2, .7),
-      hit: 0, wing: random(0, TAU), target: null, tier, nectar: 0, forageTarget: null
+      hit: 0, wing: random(0, TAU), target: null, tier, nectar: 0, forageTarget: null,
+      actionTime: 0, landScale: 1, sheltered: false, role: 'alternate'
     };
   }
 
@@ -116,7 +117,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     const type = FLOWER_TYPES[index % FLOWER_TYPES.length];
     return {
       ...pos, type, size: random(18, 29), rotation: random(0, TAU), sway: random(0, TAU),
-      nectar: 1, cooldown: 0, discovered: false
+      nectar: 1, spent: false, discovered: false
     };
   }
 
@@ -193,6 +194,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
+    state.flowerTimer = TUNING.balance.flowerSpawn;
     startPanel.classList.toggle('visible', demo); overPanel.classList.remove('visible'); pauseLabel.classList.remove('visible');
     progressEl.classList.remove('visible'); hintEl.classList.remove('visible');
     if (!demo) { showHint('FOLLOW THE FLOWER MARKERS', 3.5); soundDay(); }
@@ -213,8 +215,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     state.day++;
     state.dayNectar = 0;
     state.dayGoal = 4 + state.day * 2;
-    for (const flower of state.flowers) flower.cooldown = Math.min(flower.cooldown, random(2, 8));
-    for (let i = 0; i < Math.min(4, Math.ceil(state.day / 3)); i++) state.flowers.push(makeFlower(i + state.flowers.length));
+    for (let i = 0; i < Math.min(4, Math.ceil(state.day / 3)); i++) state.flowers.push(makeFlower(state.flowers.length + i));
     state.wasps.push(...[]);
     showHint(`DAY ${state.day} · THE MEADOW IS BUSIER`, 3.2);
     state.bee.invulnerable = Math.max(state.bee.invulnerable, 1.2);
@@ -377,7 +378,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     } else if (bee.nectar >= TUNING.balance.nectarCapacity) {
       target = { x: 0, y: 0 }; targetKind = 'hive';
     } else {
-      const flowers = state.flowers.filter(flower => flower.cooldown <= 0);
+      const flowers = state.flowers.filter(flower => !flower.spent);
       target = flowers.sort((a, b) => distance(bee, a) - distance(bee, b))[0] || { x: 0, y: 0 };
       targetKind = target.type ? 'flower' : 'hive';
     }
@@ -413,7 +414,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     if (bee.nectar >= TUNING.balance.nectarCapacity) return null;
     let closest = null;
     for (const flower of state.flowers) {
-      if (flower.cooldown > 0) continue;
+      if (flower.spent) continue;
       const d = distance(bee, flower);
       if (d < flower.size + 42 && (!closest || d < closest.distance)) closest = { kind: 'flower', flower, distance: d, x: flower.x, y: flower.y };
     }
@@ -425,7 +426,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     if (distance(bee, { x: 0, y: 0 }) < 145) return { kind: 'hive', x: 0, y: 0 };
     let closest = null;
     for (const flower of state.flowers) {
-      if (flower.cooldown > 0) continue;
+      if (flower.spent) continue;
       const d = distance(bee, flower);
       if (d < flower.size + 54 && (!closest || d < closest.distance)) closest = { kind: 'flower', flower, distance: d, x: flower.x, y: flower.y };
     }
@@ -467,7 +468,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       progressEl.classList.add('visible'); progressFill.style.width = '30%'; progressText.textContent = 'SLOWING TO LAND';
       return;
     }
-    if (target.kind === 'flower' && target.flower.cooldown > 0) {
+    if (target.kind === 'flower' && target.flower.spent) {
       state.actionTarget = target; state.actionTime = 0;
       progressEl.classList.add('visible'); progressFill.style.width = '100%'; progressText.textContent = 'SAFE IN THE FLOWER · SPACE TO LAUNCH';
       return;
@@ -488,7 +489,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     if (state.actionTime < needed) return;
 
     if (target.kind === 'flower') {
-      target.flower.cooldown = random(18, 28);
+      target.flower.spent = true;
       target.flower.nectar = 0;
       state.bee.nectar++;
       burst(target.flower.x, target.flower.y, target.flower.type.petal, 12, 70);
@@ -540,14 +541,16 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
   function updateEnemies(dt) {
     state.waspTimer -= dt;
     state.dragonflyTimer -= dt;
-    const maxWasps = Math.min(9, 1 + Math.ceil(state.day / 2));
+    const nectar = state.totalNectar;
+    const maxWasps = Math.min(10, TUNING.balance.enemyBaseline + Math.floor(nectar / TUNING.balance.enemyNectarStep));
     if (state.waspTimer <= 0 && state.wasps.length < maxWasps) {
       spawnWasp();
-      state.waspTimer = random(8, 13) / (TUNING.balance.enemies * (1 + state.day * .045));
+      state.waspTimer = random(8, 13) / (TUNING.balance.enemies * (1 + nectar * .02));
     }
-    if (state.dragonflyTimer <= 0 && state.dragonflies.length < Math.min(4, Math.ceil(state.day / 4))) {
+    const maxDragonflies = Math.min(4, Math.floor(nectar / TUNING.balance.dragonflyNectarStep));
+    if (state.dragonflyTimer <= 0 && state.dragonflies.length < maxDragonflies) {
       spawnDragonfly();
-      state.dragonflyTimer = random(18, 28) / (TUNING.balance.enemies * (1 + state.day * .035));
+      state.dragonflyTimer = random(18, 28) / (TUNING.balance.enemies * (1 + nectar * .02));
     }
 
     const chaseables = [];
@@ -634,22 +637,22 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
         const guardDistance = distance(guard, enemy);
         if ((hiveDistance < 520 || guardDistance < 235) && guardDistance < best) { best = guardDistance; target = enemy; targetKind = 'enemy'; }
       }
-      let goalX, goalY, speed;
+      let goalX, goalY, speed, arrival = 0;
       if (targetKind === 'enemy') {
         goalX = target.x; goalY = target.y; speed = 180;
       } else if (guard.nectar > 0) {
-        target = { x: 0, y: 0 }; targetKind = 'hive'; goalX = 0; goalY = 0; speed = 145;
+        target = { x: 0, y: 0 }; targetKind = 'hive'; goalX = 0; goalY = 0; speed = 150; arrival = 92;
       } else {
         const shouldForage = guard.role === 'forage' ? true
           : guard.role === 'guard' ? false
           : Boolean(guard.forageTarget) || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
-        if (guard.forageTarget?.cooldown > 0) guard.forageTarget = null;
+        if (guard.forageTarget && (guard.forageTarget.spent || guard.forageTarget.nectar <= 0)) guard.forageTarget = null;
         if (shouldForage && !guard.forageTarget) {
-          const flowers = state.flowers.filter(flower => flower.cooldown <= 0);
+          const flowers = state.flowers.filter(flower => !flower.spent && flower.nectar > 0);
           guard.forageTarget = flowers.sort((a, b) => distance(guard, a) - distance(guard, b))[0] || null;
         }
         if (shouldForage && guard.forageTarget) {
-          target = guard.forageTarget; targetKind = 'flower'; goalX = target.x; goalY = target.y; speed = 138;
+          target = guard.forageTarget; targetKind = 'flower'; goalX = target.x; goalY = target.y; speed = 138; arrival = target.size + 24;
         } else {
           const patrol = state.elapsed * .62 + guard.id * Math.PI;
           goalX = Math.cos(patrol) * (112 + guard.tier * 9); goalY = Math.sin(patrol) * (82 + guard.tier * 7); speed = 115;
@@ -658,18 +661,27 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       guard.target = target;
       const desired = Math.atan2(goalY - guard.y, goalX - guard.x);
       guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
-      guard.vx += Math.cos(guard.angle) * speed * dt * 3;
-      guard.vy += Math.sin(guard.angle) * speed * dt * 3;
-      guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
+      const goalDistance = Math.hypot(goalX - guard.x, goalY - guard.y);
+      const landed = arrival > 0 && goalDistance < arrival && Math.hypot(guard.vx, guard.vy) < 70;
+      guard.sheltered = landed;
+      guard.landScale += ((landed ? .68 : 1) - guard.landScale) * (1 - Math.exp(-10 * dt));
+      if (landed) {
+        guard.vx *= Math.pow(.04, dt); guard.vy *= Math.pow(.04, dt);
+        guard.actionTime += dt;
+        if (targetKind === 'flower' && guard.actionTime >= 1.05) {
+          target.spent = true; target.nectar = 0; guard.nectar = 1; guard.forageTarget = null; guard.actionTime = 0;
+          burst(target.x, target.y, target.type.petal, 12, 70); soundCollect();
+        } else if (targetKind === 'hive' && guard.actionTime >= .75) {
+          guard.nectar = 0; helperDeposits++; guard.actionTime = 0; burst(0, 0, '#8ee6e9', 7, 70);
+        }
+      } else {
+        guard.actionTime = 0;
+        const ease = arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1;
+        guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3;
+        guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3;
+        guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
+      }
       guard.x += guard.vx * dt; guard.y += guard.vy * dt;
-
-      if (targetKind === 'flower' && target && distance(guard, target) < target.size + 19) {
-        target.cooldown = random(18, 28); target.nectar = 0; guard.nectar = 1; guard.forageTarget = null;
-        burst(target.x, target.y, target.type.petal, 8, 58); soundCollect();
-      }
-      if (targetKind === 'hive' && distance(guard, { x: 0, y: 0 }) < 88) {
-        guard.nectar = 0; helperDeposits++; burst(0, 0, '#8ee6e9', 7, 70);
-      }
       if (targetKind === 'enemy' && target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
         target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
         const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
@@ -706,14 +718,18 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
   }
 
   function updateFlowers(dt) {
-    for (const flower of state.flowers) {
-      flower.sway += dt * .8;
-      if (flower.cooldown > 0) {
-        flower.cooldown -= dt;
-        if (flower.cooldown <= 0) { flower.cooldown = 0; flower.nectar = 1; }
-      }
-      if (distance(flower, state.bee) < 170) flower.discovered = true;
+    state.flowerTimer -= dt;
+    if (state.flowerTimer <= 0) {
+      state.flowerTimer = TUNING.balance.flowerSpawn;
+      if (state.flowers.length < 110) state.flowers.push(makeFlower(state.flowers.length));
     }
+    const bees = [state.bee, ...state.guards];
+    state.flowers = state.flowers.filter(flower => {
+      flower.sway += dt * .8;
+      if (distance(flower, state.bee) < 170) flower.discovered = true;
+      if (!flower.spent) return true;
+      return bees.some(bee => bee && Math.hypot(bee.x - flower.x, bee.y - flower.y) < 70);
+    });
   }
 
   function damageBee(fromX, fromY) {
@@ -820,7 +836,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
 
   function drawFlower(flower) {
     if (!onScreen(flower, 50)) return;
-    const p = worldToScreen(flower), wilt = flower.cooldown > 0;
+    const p = worldToScreen(flower), wilt = flower.spent;
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(flower.rotation + Math.sin(flower.sway) * .06); ctx.globalAlpha = wilt ? .42 : 1;
     ctx.strokeStyle = '#29663a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 4); ctx.quadraticCurveTo(8, 15, 4, 25); ctx.stroke();
     for (let i = 0; i < flower.type.petals; i++) {
@@ -956,7 +972,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
   function drawMarkers() {
     drawHomePointer();
     if (state.bee.nectar < TUNING.balance.nectarCapacity) {
-      const flowers = state.flowers.filter(f => f.cooldown <= 0).sort((a, b) => distance(state.bee, a) - distance(state.bee, b));
+      const flowers = state.flowers.filter(f => !f.spent).sort((a, b) => distance(state.bee, a) - distance(state.bee, b));
       for (const flower of flowers.slice(0, 2)) drawCompassMarker(flower, flower.type.petal, 'FLOWER');
     }
     for (const dragon of state.dragonflies) drawCompassMarker(dragon, '#d94b31', 'DANGER');
