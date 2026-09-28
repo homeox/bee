@@ -47,7 +47,7 @@ const colonyEl = document.querySelector('#colony-count');
     width: 0, height: 0, dpr: 1, running: false, demo: false, paused: false, lastTime: 0, elapsed: 0,
     score: 0, totalNectar: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
-    flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
+    flowers: [], flowerPatches: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
     obstacles: [], worldMap: { cell: 500, cells: {} }, mapTimer: 0,
     colonies: [], hives: [], queens: [], nextColonyId: 1,
     camera: { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, targetZoom: 1 },
@@ -138,6 +138,7 @@ const colonyEl = document.querySelector('#colony-count');
       id, colonyId, x: colony.x + Math.cos(angle) * 92, y: colony.y + Math.sin(angle) * 92, vx: 0, vy: 0, angle,
       radius: 14, health: 3, maxHealth: 3, attackCooldown: random(.2, .7),
       hit: 0, wing: random(0, TAU), target: null, tier, nectar: 0, forageTarget: null,
+      flowerMemory: [], exploreTarget: null, exploreStep: 0,
       actionTime: 0, landScale: 1, sheltered: false, role: 'alternate', stingAnim: 0, lastPlayerSting: -1
     };
   }
@@ -156,12 +157,67 @@ const colonyEl = document.querySelector('#colony-count');
     return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
   }
 
-  function makeFlower(index = 0) {
-    const pos = randomMeadowPoint(390, WORLD_RADIUS - 160);
-    const type = FLOWER_TYPES[index % FLOWER_TYPES.length];
+  function makeFlowerPatch(id) {
+    let pos = randomMeadowPoint(470, WORLD_RADIUS - 420);
+    for (let attempt = 0; attempt < 60; attempt++) {
+      const candidate = randomMeadowPoint(470, WORLD_RADIUS - 420);
+      if (state.flowerPatches.every(patch => distance(candidate, patch) > patch.radius + 360)) { pos = candidate; break; }
+    }
+    return { id, ...pos, radius: random(175, 270), typeIndex: id % FLOWER_TYPES.length };
+  }
+
+  function makeFlower(index = 0, preferredPatch = null) {
+    const patch = preferredPatch || state.flowerPatches[index % Math.max(1, state.flowerPatches.length)];
+    if (!patch) {
+      const pos = randomMeadowPoint(390, WORLD_RADIUS - 160);
+      return { ...pos, patchId: null, type: FLOWER_TYPES[index % FLOWER_TYPES.length], size: random(18, 29), rotation: random(0, TAU), sway: random(0, TAU), nectar: 1, spent: false, discovered: false };
+    }
+    const angle = random(0, TAU), radius = Math.sqrt(Math.random()) * patch.radius;
+    const pos = { x: patch.x + Math.cos(angle) * radius, y: patch.y + Math.sin(angle) * radius };
+    const varied = Math.random() < .22 ? index % FLOWER_TYPES.length : patch.typeIndex;
+    const type = FLOWER_TYPES[varied];
     return {
-      ...pos, type, size: random(18, 29), rotation: random(0, TAU), sway: random(0, TAU),
+      ...pos, patchId: patch.id, type, size: random(18, 29), rotation: random(0, TAU), sway: random(0, TAU),
       nectar: 1, spent: false, discovered: false
+    };
+  }
+
+  function rememberFlowerPatch(guard, patchId) {
+    if (patchId == null || guard.flowerMemory.includes(patchId)) return false;
+    guard.flowerMemory.push(patchId);
+    return true;
+  }
+
+  function shareFlowerMemory(guard) {
+    if (!guard?.flowerMemory?.length) return 0;
+    let shared = 0;
+    for (const helper of state.guards) {
+      if (helper.health <= 0 || helper.colonyId !== guard.colonyId) continue;
+      for (const patchId of guard.flowerMemory) if (rememberFlowerPatch(helper, patchId)) shared++;
+    }
+    return shared;
+  }
+
+  function exchangeFlowerMemory(first, second) {
+    if (!first || !second || first.colonyId !== second.colonyId) return 0;
+    const combined = [...new Set([...(first.flowerMemory || []), ...(second.flowerMemory || [])])];
+    const learned = combined.length * 2 - (first.flowerMemory?.length || 0) - (second.flowerMemory?.length || 0);
+    first.flowerMemory = [...combined]; second.flowerMemory = [...combined];
+    return learned;
+  }
+
+  function chooseExploreTarget(guard, colony) {
+    guard.exploreStep = (guard.exploreStep || 0) + 1;
+    const unknown = state.flowerPatches.filter(patch => !guard.flowerMemory.includes(patch.id));
+    if (unknown.length) {
+      const patch = unknown[Math.abs(guard.id + guard.exploreStep * 3) % unknown.length];
+      return { x: patch.x + random(-patch.radius * .45, patch.radius * .45), y: patch.y + random(-patch.radius * .45, patch.radius * .45) };
+    }
+    const angle = guard.id * 1.91 + guard.exploreStep * 2.17 + colony.id * .73;
+    const radius = 520 + ((guard.id * 173 + guard.exploreStep * 337) % 2500);
+    return {
+      x: clamp(colony.x + Math.cos(angle) * radius, -WORLD_RADIUS + 180, WORLD_RADIUS - 180),
+      y: clamp(colony.y + Math.sin(angle) * radius, -WORLD_RADIUS + 180, WORLD_RADIUS - 180)
     };
   }
 
@@ -270,6 +326,9 @@ const colonyEl = document.querySelector('#colony-count');
 
   function populateMeadow() {
     state.flowers = [];
+    state.flowerPatches = [];
+    const patchCount = Math.max(8, Math.round(11 * Math.sqrt(TUNING.balance.flowers)));
+    for (let i = 0; i < patchCount; i++) state.flowerPatches.push(makeFlowerPatch(i));
     const flowerCount = Math.round(62 * TUNING.balance.flowers);
     for (let i = 0; i < flowerCount; i++) state.flowers.push(makeFlower(i));
     state.webs = [];
@@ -286,6 +345,7 @@ const colonyEl = document.querySelector('#colony-count');
       }
     }
     for (const web of state.webs) registerMapFeature('web', web.x, web.y, web.radius);
+    for (const patch of state.flowerPatches) registerMapFeature('flowerbed', patch.x, patch.y, patch.radius);
     for (let i = 0; i < 14; i++) {
       const kind = Math.random() < .45 ? 'tree' : 'bush';
       const spot = randomMeadowPoint(520, WORLD_RADIUS - 220);
@@ -473,6 +533,7 @@ const colonyEl = document.querySelector('#colony-count');
   function killGuard(guard) {
     if (guard.dead) return;
     guard.dead = true;
+    guard.flowerMemory = []; guard.forageTarget = null; guard.exploreTarget = null;
     burst(guard.x, guard.y, '#78d1db', 22, 165);
     state.guardRespawns.push({ id: guard.id, tier: guard.tier, colonyId: guard.colonyId, timer: 4.5, notified: false });
     soundGuardDown();
@@ -956,11 +1017,28 @@ const colonyEl = document.querySelector('#colony-count');
       if (roster[1]) roles.set(roster[1], 'guard');
       for (const guard of roster.slice(2)) roles.set(guard, 'alternate');
     }
+    for (let i = 0; i < state.guards.length; i++) {
+      const first = state.guards[i];
+      if (first.health <= 0) continue;
+      for (let j = i + 1; j < state.guards.length; j++) {
+        const second = state.guards[j];
+        if (second.health <= 0 || first.colonyId !== second.colonyId) continue;
+        if (distance(first, second) > first.radius + second.radius + 7) continue;
+        if (exchangeFlowerMemory(first, second) > 0) {
+          const colony = colonyById(first.colonyId);
+          burst((first.x + second.x) / 2, (first.y + second.y) / 2, colony.palette.accent, 5, 42);
+        }
+      }
+    }
     for (const guard of [...state.guards]) {
       if (guard.health <= 0) continue;
       const colony = colonyById(guard.colonyId), hive = colony;
       guard.role = roles.get(guard) || 'alternate';
       guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
+      for (const flower of state.flowers) {
+        if (!flower.spent && flower.nectar > 0 && distance(guard, flower) < 220) rememberFlowerPatch(guard, flower.patchId);
+      }
+      if (distance(guard, hive) < 128) shareFlowerMemory(guard);
       let target = null, targetKind = 'patrol', best = Infinity;
       for (const enemy of enemies) {
         const hiveDistance = distance(enemy, hive), guardDistance = distance(guard, enemy);
@@ -983,11 +1061,15 @@ const colonyEl = document.querySelector('#colony-count');
           : Boolean(guard.forageTarget) || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
         if (guard.forageTarget && (guard.forageTarget.spent || guard.forageTarget.nectar <= 0)) guard.forageTarget = null;
         if (shouldForage && !guard.forageTarget) {
-          const flowers = state.flowers.filter(flower => !flower.spent && flower.nectar > 0 && !tangledInWeb(flower));
+          const flowers = state.flowers.filter(flower => !flower.spent && flower.nectar > 0 && !tangledInWeb(flower)
+            && (guard.flowerMemory.includes(flower.patchId) || distance(guard, flower) < 240));
           guard.forageTarget = flowers.sort((a, b) => distance(guard, a) - distance(guard, b))[0] || null;
         }
         if (shouldForage && guard.forageTarget) {
           target = guard.forageTarget; targetKind = 'flower'; goalX = target.x; goalY = target.y; speed = 138; arrival = target.size + 24;
+        } else if (shouldForage) {
+          if (!guard.exploreTarget || distance(guard, guard.exploreTarget) < 105) guard.exploreTarget = chooseExploreTarget(guard, colony);
+          target = guard.exploreTarget; targetKind = 'explore'; goalX = target.x; goalY = target.y; speed = 132; arrival = 0;
         } else {
           const patrol = state.elapsed * .62 + guard.id * Math.PI;
           goalX = hive.x + Math.cos(patrol) * (112 + guard.tier * 9);
@@ -1008,10 +1090,12 @@ const colonyEl = document.querySelector('#colony-count');
       if (landed) {
         guard.vx *= Math.pow(.04, dt); guard.vy *= Math.pow(.04, dt); guard.actionTime += dt;
         if (targetKind === 'flower' && guard.actionTime >= 1.05) {
+          rememberFlowerPatch(guard, target.patchId);
           target.spent = true; target.nectar = 0; guard.nectar = 1; guard.forageTarget = null; guard.actionTime = 0;
           burst(target.x, target.y, target.type.petal, 12, 70); soundCollect();
         } else if (targetKind === 'hive' && guard.actionTime >= .75) {
           guard.nectar = 0; deposits.set(colony.id, (deposits.get(colony.id) || 0) + 1); guard.actionTime = 0;
+          shareFlowerMemory(guard);
           burst(hive.x, hive.y, colony.palette.accent, 7, 70);
         }
       } else if (guardWeb) {
@@ -1090,7 +1174,13 @@ const colonyEl = document.querySelector('#colony-count');
     state.flowerTimer -= dt;
     if (state.flowerTimer <= 0) {
       state.flowerTimer = TUNING.balance.flowerSpawn;
-      if (state.flowers.length < 110) state.flowers.push(makeFlower(state.flowers.length));
+      if (state.flowers.length < 110) {
+        const activeCounts = new Map(state.flowerPatches.map(patch => [patch.id, 0]));
+        for (const flower of state.flowers) if (!flower.spent && activeCounts.has(flower.patchId)) activeCounts.set(flower.patchId, activeCounts.get(flower.patchId) + 1);
+        const sparsePatches = [...state.flowerPatches].sort((a, b) => activeCounts.get(a.id) - activeCounts.get(b.id)).slice(0, 3);
+        const patch = sparsePatches[Math.floor(Math.random() * sparsePatches.length)] || null;
+        state.flowers.push(makeFlower(state.flowers.length, patch));
+      }
     }
     const bees = [state.bee, ...state.guards];
     state.flowers = state.flowers.filter(flower => {
@@ -1632,6 +1722,7 @@ const colonyEl = document.querySelector('#colony-count');
   window.__BEE_DEBUG__ = {
     state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, bankColonyNectar,
     rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, waspAttackDamage, setZoom, nextDay,
+    rememberFlowerPatch, shareFlowerMemory, exchangeFlowerMemory, killGuard,
     landingCandidate, update, TUNING
   };
   requestAnimationFrame(frame);

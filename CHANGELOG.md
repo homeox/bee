@@ -5,6 +5,25 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.15.0] - 2026-09-28
+
+### Added
+
+- Flowers now grow in concentrated, persistent resource patches, with timed
+  regrowth directed toward the most depleted beds.
+- Helpers discover nearby flowerbeds, remember them for future foraging trips,
+  and share their knowledge at the hive or by bumping into a friendly bee.
+- Every colony, including rival and descendant hives, uses the same independent
+  flower-memory and sharing rules.
+
+### Changed
+
+- Helper foraging now relies on exploration and remembered flowerbeds rather
+  than global knowledge of every flower in the meadow.
+- A helper loses all personal flowerbed memories when it dies; its replacement
+  begins without that knowledge and must learn it again from exploration or
+  another surviving bee.
+
 ## [0.14.0] - 2026-09-28
 
 ### Added
