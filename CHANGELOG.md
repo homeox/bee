@@ -5,6 +5,18 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.10.0] - 2026-09-28
+
+### Changed
+
+- Helper bees now attack exactly like the player: they turn their tail to the
+  enemy and reverse into it so the rear stinger lands the blow. Previously they
+  rammed head-first and traded a point of their own health on every exchange.
+- A helper now only loses health on body contact, matching the player, so a
+  clean sting costs them nothing.
+- This gives helper combat real weight: a helper that fights back can drive off
+  or kill its attacker instead of always losing the exchange.
+
 ## [0.9.0] - 2026-09-28
 
 ### Added

@@ -830,7 +830,10 @@ const colonyEl = document.querySelector('#colony-count');
         }
       }
       guard.target = target;
-      const desired = Math.atan2(goalY - guard.y, goalX - guard.x);
+      const retro = targetKind === 'enemy';
+      const desired = retro
+        ? Math.atan2(guard.y - target.y, guard.x - target.x)
+        : Math.atan2(goalY - guard.y, goalX - guard.x);
       guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
       const goalDistance = Math.hypot(goalX - guard.x, goalY - guard.y);
       const landed = arrival > 0 && goalDistance < arrival && Math.hypot(guard.vx, guard.vy) < 70;
@@ -852,19 +855,33 @@ const colonyEl = document.querySelector('#colony-count');
         webWiggle(guard, guardWeb, dt, guard.id, .06);
       } else {
         guard.actionTime = 0;
-        const ease = arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1;
-        guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3;
-        guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3;
+        const ease = retro ? Math.min(1, goalDistance / 90) : (arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1);
+        const drive = retro ? -1 : 1;
+        guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3 * drive;
+        guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3 * drive;
         guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
       }
       guard.x += guard.vx * dt; guard.y += guard.vy * dt;
       resolveObstacles(guard);
-      if (targetKind === 'enemy' && target && distance(guard, target) < guard.radius + target.radius + 3 && guard.attackCooldown <= 0) {
-        target.health--; target.hit = .16; guard.health--; guard.hit = .22; guard.attackCooldown = .72;
-        const impactX = (guard.x + target.x) / 2, impactY = (guard.y + target.y) / 2;
-        burst(impactX, impactY, '#83d8e3', 10, 110); soundHit();
-        if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target); }
-        if (guard.health <= 0) killGuard(guard);
+      if (targetKind === 'enemy' && target && guard.attackCooldown <= 0) {
+        const stinger = {
+          x: guard.x - Math.cos(guard.angle) * 35,
+          y: guard.y - Math.sin(guard.angle) * 35
+        };
+        if (distance(stinger, target) < target.radius + 11) {
+          guard.attackCooldown = .72;
+          target.health--; target.hit = .16;
+          const angle = Math.atan2(target.y - guard.y, target.x - guard.x);
+          target.vx = (target.vx || 0) + Math.cos(angle) * 145;
+          target.vy = (target.vy || 0) + Math.sin(angle) * 145;
+          burst((guard.x + target.x) / 2, (guard.y + target.y) / 2, '#ffd83f', 10, 110); soundHit();
+          if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target); }
+        } else if (distance(guard, target) < guard.radius + target.radius + 3) {
+          guard.attackCooldown = .72;
+          guard.health--; guard.hit = .22;
+          burst(guard.x, guard.y, '#83d8e3', 10, 110); soundHit();
+          if (guard.health <= 0) killGuard(guard);
+        }
       }
     }
     state.guards = state.guards.filter(guard => guard.health > 0);
