@@ -5,6 +5,24 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.1] - 2026-09-28
+
+### Fixed
+
+- Worker recruitment is now tied directly to the hive's actual stored nectar,
+  exactly as shown by `HIVE NECTAR`. Flowers, combat rewards, and stolen nectar
+  all cross the same one-worker-per-five-nectar thresholds; the separate
+  flower-delivery progression lock has been removed.
+- A hive reaching 30 stored nectar now recruits all six additional worker tiers
+  for eight workers total, paying the normal one nectar per new worker.
+
+### Changed
+
+- Friendly AI bees are now called **workers** throughout the current game UI,
+  messages, code paths, and documentation.
+- The former `COLONY` counter is now `WORKERS` and counts workers only, excluding
+  the player bee, so its live and available numbers are directly comparable.
+
 ## [0.16.0] - 2026-09-28
 
 ### Added

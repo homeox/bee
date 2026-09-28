@@ -35,8 +35,8 @@ html, body {
 .hud-title { color: #2b271e; font: 800 18px/1 "Baloo 2", sans-serif; letter-spacing: .22em; }
 .hud-title span { letter-spacing: 0; }
 .version { display: block; margin-top: 3px; font-size: 9px; font-style: normal; font-weight: 800; letter-spacing: .18em; color: rgba(43, 39, 30, .55); }
-.colony { display: flex; align-items: baseline; gap: 6px; }
-.colony strong { color: #242015; font: 800 15px/1 "Baloo 2", sans-serif; }
+.workers { display: flex; align-items: baseline; gap: 6px; }
+.workers strong { color: #242015; font: 800 15px/1 "Baloo 2", sans-serif; }
 
 .status-row {
   position: absolute; z-index: 3; top: max(68px, calc(env(safe-area-inset-top) + 64px));

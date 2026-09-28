@@ -9,7 +9,7 @@ const versionEl = document.querySelector('#version');
 const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0';
   const livesEl = document.querySelector('#lives');
   const dayEl = document.querySelector('#day');
-const colonyEl = document.querySelector('#colony-count');
+const workerEl = document.querySelector('#worker-count');
   const hintEl = document.querySelector('#hint');
   const progressEl = document.querySelector('#action-progress');
   const progressFill = progressEl.querySelector('i');
@@ -49,7 +49,7 @@ const colonyEl = document.querySelector('#colony-count');
     width: 0, height: 0, dpr: 1, running: false, demo: false, paused: false, lastTime: 0, elapsed: 0,
     score: 0, totalNectar: 0, best: Number(localStorage.getItem('bee-best') || 0), lives: 3, day: 1,
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
-    flowers: [], flowerPatches: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
+    flowers: [], flowerPatches: [], webs: [], spiders: [], wasps: [], dragonflies: [], workers: [], workerRespawns: [], workerTiersSpawned: [], particles: [],
     obstacles: [], worldMap: { cell: 500, cells: {} }, mapTimer: 0,
     colonies: [], hives: [], queens: [], nextColonyId: 1,
     camera: { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, targetZoom: 1 },
@@ -117,7 +117,7 @@ const colonyEl = document.querySelector('#colony-count');
   function makeColony(id, x, y, parentId = null) {
     return {
       id, x, y, parentId, palette: colonyPalette(id), score: HIVE_START_NECTAR, totalNectar: 0,
-      helperTiersSpawned: [], nextGuardId: 2, foundedAt: state.elapsed, queensFounded: 0,
+      workerTiersSpawned: [], nextWorkerId: 2, foundedAt: state.elapsed, queensFounded: 0,
       alertTarget: null, alertTimer: 0, destroyed: false
     };
   }
@@ -134,7 +134,7 @@ const colonyEl = document.querySelector('#colony-count');
     enemy.health += target - enemy.maxHealth; enemy.maxHealth = target;
   }
 
-  function makeGuard(id, tier = 0, colonyId = 0) {
+  function makeWorker(id, tier = 0, colonyId = 0) {
     const colony = colonyById(colonyId);
     const angle = id * Math.PI;
     return {
@@ -194,9 +194,9 @@ const colonyEl = document.querySelector('#colony-count');
   function shareFlowerMemory(guard) {
     if (!guard?.flowerMemory?.length) return 0;
     let shared = 0;
-    for (const helper of state.guards) {
-      if (helper.health <= 0 || helper.colonyId !== guard.colonyId) continue;
-      for (const patchId of guard.flowerMemory) if (rememberFlowerPatch(helper, patchId)) shared++;
+    for (const worker of state.workers) {
+      if (worker.health <= 0 || worker.colonyId !== guard.colonyId) continue;
+      for (const patchId of guard.flowerMemory) if (rememberFlowerPatch(worker, patchId)) shared++;
     }
     return shared;
   }
@@ -268,7 +268,7 @@ const colonyEl = document.querySelector('#colony-count');
     if (state.mapTimer > 0) return;
     state.mapTimer = .25;
     mapCell(state.bee.x, state.bee.y).seen = true;
-    for (const guard of state.guards) mapCell(guard.x, guard.y).seen = true;
+    for (const guard of state.workers) mapCell(guard.x, guard.y).seen = true;
     for (const queen of state.queens) mapCell(queen.x, queen.y).seen = true;
   }
 
@@ -375,7 +375,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.day = TUNING.dev.startDay; state.dayNectar = 0; state.dayGoal = 4 + state.day * 2;
     state.wasps = []; state.dragonflies = []; state.particles = [];
     state.colonies = [makeColony(0, 0, 0)]; state.hives = [state.colonies[0]]; state.queens = []; state.nextColonyId = 1;
-    state.guards = [makeGuard(0, 0, 0), makeGuard(1, 0, 0)]; state.guardRespawns = []; state.helperTiersSpawned = [];
+    state.workers = [makeWorker(0, 0, 0), makeWorker(1, 0, 0)]; state.workerRespawns = []; state.workerTiersSpawned = [];
     state.bee = makeBee(); state.actionTarget = null; state.landingTarget = null; state.actionTime = 0; state.reverseSerial = 0;
     state.camera.zoom = 1; state.camera.targetZoom = 1;
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
@@ -423,24 +423,24 @@ const colonyEl = document.querySelector('#colony-count');
   if (versionEl) versionEl.textContent = 'v' + BEE_VERSION;
     livesEl.textContent = '♥'.repeat(Math.max(0, state.lives));
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
-    const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
+    const highestWorkerTier = state.workerTiersSpawned.length ? Math.max(...state.workerTiersSpawned) : 0;
+    const availableWorkers = 2 + Math.max(highestWorkerTier, Math.floor(state.score / 5));
     dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
-    const homeHelpers = state.guards.filter(guard => guard.colonyId === 0).length;
-    if (colonyEl) colonyEl.textContent = `${homeHelpers + 1}/${availableHelpers + 1}`;
+    const homeWorkers = state.workers.filter(guard => guard.colonyId === 0).length;
+    if (workerEl) workerEl.textContent = `${homeWorkers}/${availableWorkers}`;
   }
 
-  function spawnUnlockedHelpers(colony = state.colonies[0]) {
-    const total = colonyTotal(colony);
-    const unlocked = Math.floor(total / 5);
-    const spawned = colony.id === 0 ? state.helperTiersSpawned : colony.helperTiersSpawned;
+  function spawnUnlockedWorkers(colony = state.colonies[0]) {
+    const unlocked = Math.floor(colonyBank(colony) / 5);
+    const spawned = colony.id === 0 ? state.workerTiersSpawned : colony.workerTiersSpawned;
     for (let tier = 1; tier <= unlocked; tier++) {
       if (spawned.includes(tier) || colonyBank(colony) <= 1) continue;
       setColonyBank(colony, colonyBank(colony) - 1);
       spawned.push(tier);
-      const id = colony.id === 0 ? tier + 1 : colony.id * 10000 + colony.nextGuardId++;
-      state.guards.push(makeGuard(id, tier, colony.id));
+      const id = colony.id === 0 ? tier + 1 : colony.id * 10000 + colony.nextWorkerId++;
+      state.workers.push(makeWorker(id, tier, colony.id));
       burst(colony.x, colony.y, colony.palette.accent, 20, 120);
-      if (colony.id === 0) showHint(`NEW HELPER BEE · ${tier * 5} NECTAR MILESTONE`, 2.2);
+      if (colony.id === 0) showHint(`NEW WORKER BEE · ${tier * 5} STORED NECTAR`, 2.2);
       soundGuardReturn();
     }
   }
@@ -450,7 +450,7 @@ const colonyEl = document.querySelector('#colony-count');
     setColonyBank(colony, colonyBank(colony) + amount);
     setColonyTotal(colony, colonyTotal(colony) + amount);
     if (colony.id === 0) state.dayNectar += amount;
-    spawnUnlockedHelpers(colony);
+    spawnUnlockedWorkers(colony);
     maybeLaunchQueen(colony);
     if (announce && colony.id === 0) showHint(`DELIVERED ${amount} NECTAR`, 1.5);
     if (colony.id === 0 && state.dayNectar >= state.dayGoal) nextDay();
@@ -461,7 +461,7 @@ const colonyEl = document.querySelector('#colony-count');
 
   function rewardColony(colony, amount, announce = false) {
     setColonyBank(colony, colonyBank(colony) + amount);
-    spawnUnlockedHelpers(colony);
+    spawnUnlockedWorkers(colony);
     if (announce && colony.id === 0) showHint(`+${amount} NECTAR`, .8);
     maybeLaunchQueen(colony);
     updateHud();
@@ -512,7 +512,7 @@ const colonyEl = document.querySelector('#colony-count');
   function foundColony(queen) {
     const colony = makeColony(queen.id, queen.targetX, queen.targetY, queen.sourceColonyId);
     state.colonies.push(colony); state.hives.push(colony);
-    state.guards.push(makeGuard(colony.id * 10000, 0, colony.id), makeGuard(colony.id * 10000 + 1, 0, colony.id));
+    state.workers.push(makeWorker(colony.id * 10000, 0, colony.id), makeWorker(colony.id * 10000 + 1, 0, colony.id));
     registerMapFeature('hive', colony.x, colony.y, 110);
     burst(colony.x, colony.y, colony.palette.accent, 42, 180);
     showHint(`A NEW RIVAL HIVE HAS BEEN FOUNDED · COLONY ${colony.id + 1}`, 3.2);
@@ -525,9 +525,9 @@ const colonyEl = document.querySelector('#colony-count');
     if (!colony || colony.destroyed) return false;
     colony.destroyed = true; colony.alertTarget = null; colony.alertTimer = 0;
     burst(colony.x, colony.y, colony.palette.hive, 58, 230);
-    for (const guard of state.guards) if (guard.colonyId === colony.id) guard.health = 0;
-    state.guards = state.guards.filter(guard => guard.colonyId !== colony.id);
-    state.guardRespawns = state.guardRespawns.filter(respawn => respawn.colonyId !== colony.id);
+    for (const guard of state.workers) if (guard.colonyId === colony.id) guard.health = 0;
+    state.workers = state.workers.filter(guard => guard.colonyId !== colony.id);
+    state.workerRespawns = state.workerRespawns.filter(respawn => respawn.colonyId !== colony.id);
     state.queens = state.queens.filter(queen => queen.sourceColonyId !== colony.id);
     state.hives = state.hives.filter(hive => hive.id !== colony.id);
     for (const cell of Object.values(state.worldMap.cells)) {
@@ -563,15 +563,15 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function chooseRaidHive(guard, colony) {
-    const roster = state.guards.filter(helper => helper.health > 0 && helper.colonyId === colony.id);
+    const roster = state.workers.filter(worker => worker.health > 0 && worker.colonyId === colony.id);
     if (colony.destroyed || colonyBank(colony) < 8 || roster.length < 3 || guard.role === 'guard') return null;
-    const remembered = new Set(roster.flatMap(helper => helper.flowerMemory || []));
+    const remembered = new Set(roster.flatMap(worker => worker.flowerMemory || []));
     const safeFlowers = state.flowers.filter(flower => !flower.spent && remembered.has(flower.patchId) && !tangledInWeb(flower)).length;
     const forageScore = safeFlowers ? 2.5 + Math.min(4, safeFlowers * .3) : .8;
     let bestHive = null, bestScore = -Infinity;
     for (const target of state.hives) {
       if (target.id === colony.id || target.destroyed || colonyBank(target) <= 0) continue;
-      const defenders = state.guards.filter(helper => helper.health > 0 && helper.colonyId === target.id).length;
+      const defenders = state.workers.filter(worker => worker.health > 0 && worker.colonyId === target.id).length;
       const travel = distance(guard, target) / 1100;
       const reserve = colonyBank(colony) - HIVE_START_NECTAR;
       const finishBonus = colonyBank(target) <= HIVE_START_NECTAR ? 4.5 : 0;
@@ -596,12 +596,12 @@ const colonyEl = document.querySelector('#colony-count');
     state.queens = state.queens.filter(queen => !queen.founded);
   }
 
-  function killGuard(guard) {
+  function killWorker(guard) {
     if (guard.dead) return;
     guard.dead = true;
     guard.flowerMemory = []; guard.forageTarget = null; guard.exploreTarget = null;
     burst(guard.x, guard.y, '#78d1db', 22, 165);
-    state.guardRespawns.push({ id: guard.id, tier: guard.tier, colonyId: guard.colonyId, timer: 4.5, notified: false });
+    state.workerRespawns.push({ id: guard.id, tier: guard.tier, colonyId: guard.colonyId, timer: 4.5, notified: false });
     soundGuardDown();
   }
 
@@ -610,8 +610,8 @@ const colonyEl = document.querySelector('#colony-count');
     resolveEnemyContact(dragon, state.dragonflies, 99);
     if (canBitePlayer && state.bee.invulnerable > 0) return true;
     const reach = dragon.radius + 4;
-    for (const guard of state.guards) {
-      if (guard.health > 0 && distance(dragon, guard) < reach + guard.radius) { guard.health = 0; killGuard(guard); return true; }
+    for (const guard of state.workers) {
+      if (guard.health > 0 && distance(dragon, guard) < reach + guard.radius) { guard.health = 0; killWorker(guard); return true; }
     }
     for (const enemy of [...state.wasps, ...state.spiders]) {
       if (enemy.health > 0 && distance(dragon, enemy) < reach + enemy.radius) { enemy.health = 0; return true; }
@@ -929,7 +929,7 @@ const colonyEl = document.querySelector('#colony-count');
 
     const chaseables = [];
     if (!state.bee.sheltered) chaseables.push(state.bee);
-    for (const guard of state.guards) if (!guard.sheltered) chaseables.push(guard);
+    for (const guard of state.workers) if (!guard.sheltered) chaseables.push(guard);
     const nearestChaseable = from => {
       let target = null, best = Infinity;
       for (const candidate of chaseables) { const d = distance(from, candidate); if (d < best) { best = d; target = candidate; } }
@@ -974,7 +974,7 @@ const colonyEl = document.querySelector('#colony-count');
       dragon.tangled = Boolean(dragonWeb);
       const preyPool = [];
       if (!state.bee.sheltered) preyPool.push(state.bee);
-      for (const guard of state.guards) if (guard.health > 0 && !guard.sheltered) preyPool.push(guard);
+      for (const guard of state.workers) if (guard.health > 0 && !guard.sheltered) preyPool.push(guard);
       for (const enemy of [...state.wasps, ...state.spiders]) if (enemy.health > 0) preyPool.push(enemy);
       let dragonTarget = null, dragonTargetDistance = Infinity;
       for (const candidate of preyPool) {
@@ -1033,7 +1033,7 @@ const colonyEl = document.querySelector('#colony-count');
       for (const enemy of [...state.wasps, ...state.dragonflies]) {
         if (enemy.health > 0 && enemy.tangled) caught.push(enemy);
       }
-      for (const guard of state.guards) {
+      for (const guard of state.workers) {
         if (guard.health > 0 && guard.tangled) caught.push(guard);
       }
       if (state.bee.tangled && !state.bee.sheltered) caught.push(state.bee);
@@ -1055,7 +1055,7 @@ const colonyEl = document.querySelector('#colony-count');
             prey.health--; prey.hit = .2;
             if (prey.health <= 0) {
               growWeb(spider);
-              if (state.guards.includes(prey)) killGuard(prey);
+              if (state.workers.includes(prey)) killWorker(prey);
               else { burst(prey.x, prey.y, '#5d4031', 18, 140); soundEnemyDown(); }
             }
           }
@@ -1083,24 +1083,24 @@ const colonyEl = document.querySelector('#colony-count');
     state.webs = state.webs.filter(web => state.spiders.some(spider => spider.web === web && spider.health > 0) || (!web.managed && !web.owned));
   }
 
-  function updateGuards(dt) {
+  function updateWorkers(dt) {
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
     const deposits = new Map();
-    const guardsBefore = state.guards.length;
+    const workersBefore = state.workers.length;
     const roles = new Map();
     for (const colony of state.colonies) {
       colony.alertTimer = Math.max(0, (colony.alertTimer || 0) - dt);
       if (!colony.alertTarget || colony.alertTarget.health <= 0 || colony.alertTimer <= 0) colony.alertTarget = null;
-      const roster = state.guards.filter(guard => guard.health > 0 && guard.colonyId === colony.id).sort((a, b) => a.id - b.id);
+      const roster = state.workers.filter(guard => guard.health > 0 && guard.colonyId === colony.id).sort((a, b) => a.id - b.id);
       if (roster[0]) roles.set(roster[0], 'forage');
       if (roster[1]) roles.set(roster[1], 'guard');
       for (const guard of roster.slice(2)) roles.set(guard, 'alternate');
     }
-    for (let i = 0; i < state.guards.length; i++) {
-      const first = state.guards[i];
+    for (let i = 0; i < state.workers.length; i++) {
+      const first = state.workers[i];
       if (first.health <= 0) continue;
-      for (let j = i + 1; j < state.guards.length; j++) {
-        const second = state.guards[j];
+      for (let j = i + 1; j < state.workers.length; j++) {
+        const second = state.workers[j];
         if (second.health <= 0 || first.colonyId !== second.colonyId) continue;
         if (distance(first, second) > first.radius + second.radius + 7) continue;
         if (exchangeFlowerMemory(first, second) > 0) {
@@ -1109,7 +1109,7 @@ const colonyEl = document.querySelector('#colony-count');
         }
       }
     }
-    for (const guard of [...state.guards]) {
+    for (const guard of [...state.workers]) {
       if (guard.health <= 0) continue;
       const colony = colonyById(guard.colonyId), hive = colony;
       guard.role = roles.get(guard) || 'alternate';
@@ -1119,12 +1119,12 @@ const colonyEl = document.querySelector('#colony-count');
       }
       if (distance(guard, hive) < 128) shareFlowerMemory(guard);
       const alerted = colony.alertTarget && colony.alertTimer > 0 ? colony.alertTarget : null;
-      let target = alerted, targetKind = alerted ? (state.guards.includes(alerted) ? 'rival' : 'enemy') : 'patrol', best = alerted ? 0 : Infinity;
+      let target = alerted, targetKind = alerted ? (state.workers.includes(alerted) ? 'rival' : 'enemy') : 'patrol', best = alerted ? 0 : Infinity;
       for (const enemy of enemies) {
         const hiveDistance = distance(enemy, hive), guardDistance = distance(guard, enemy);
         if ((hiveDistance < 520 || guardDistance < 235) && guardDistance < best) { best = guardDistance; target = enemy; targetKind = 'enemy'; }
       }
-      const rivalBees = state.guards.filter(other => other !== guard && other.health > 0 && other.colonyId !== guard.colonyId && !other.sheltered);
+      const rivalBees = state.workers.filter(other => other !== guard && other.health > 0 && other.colonyId !== guard.colonyId && !other.sheltered);
       if (guard.colonyId !== 0 && !state.bee.sheltered) rivalBees.push(state.bee);
       for (const rival of rivalBees) {
         const hiveDistance = distance(rival, hive), guardDistance = distance(guard, rival);
@@ -1210,7 +1210,7 @@ const colonyEl = document.querySelector('#colony-count');
             target.health--; target.hit = .16;
             target.vx = (target.vx || 0) + Math.cos(angle) * 145; target.vy = (target.vy || 0) + Math.sin(angle) * 145;
             if (target.health <= 0) {
-              if (targetKind === 'rival') { killGuard(target); rewardColony(colony, 1); }
+              if (targetKind === 'rival') { killWorker(target); rewardColony(colony, 1); }
               else { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target, colony.id); }
             }
           }
@@ -1219,35 +1219,35 @@ const colonyEl = document.querySelector('#colony-count');
           const contactDamage = target.species === 'wasp' ? waspAttackDamage(target, guard) : 1;
           guard.attackCooldown = .72; guard.health -= contactDamage; guard.hit = .22;
           burst(guard.x, guard.y, colony.palette.accent, 10, 110); soundHit();
-          if (guard.health <= 0) killGuard(guard);
+          if (guard.health <= 0) killWorker(guard);
         }
       }
     }
 
     if (state.keys.reverse && !state.bee.landing && !state.bee.sheltered) {
       const stinger = { x: state.bee.x - Math.cos(state.bee.angle) * 35, y: state.bee.y - Math.sin(state.bee.angle) * 35 };
-      for (const rival of state.guards) {
+      for (const rival of state.workers) {
         if (rival.colonyId === 0 || rival.health <= 0 || rival.sheltered || rival.lastPlayerSting === state.reverseSerial) continue;
         if (distance(stinger, rival) >= rival.radius + 11) continue;
         rival.lastPlayerSting = state.reverseSerial; rival.health--; rival.hit = .18;
         burst((rival.x + state.bee.x) / 2, (rival.y + state.bee.y) / 2, '#ffd83f', 10, 110); soundHit();
-        if (rival.health <= 0) { killGuard(rival); rewardColony(state.colonies[0], 1, true); }
+        if (rival.health <= 0) { killWorker(rival); rewardColony(state.colonies[0], 1, true); }
       }
     }
 
-    state.guards = state.guards.filter(guard => guard.health > 0);
-    if (state.guards.length !== guardsBefore) updateHud();
+    state.workers = state.workers.filter(guard => guard.health > 0);
+    if (state.workers.length !== workersBefore) updateHud();
     for (const [colonyId, amount] of deposits) bankColonyNectar(colonyById(colonyId), amount, false);
     if (deposits.size) soundDeposit();
-    for (const respawn of state.guardRespawns) {
+    for (const respawn of state.workerRespawns) {
       respawn.timer -= dt;
       if (respawn.timer <= 0) {
         const colony = colonyById(respawn.colonyId ?? 0);
         const requirement = respawn.tier > 0 ? respawn.tier * 5 : 1;
         if (colonyBank(colony) >= requirement && colonyBank(colony) > 1) {
           setColonyBank(colony, colonyBank(colony) - 1);
-          state.guards.push(makeGuard(respawn.id, respawn.tier, colony.id)); burst(colony.x, colony.y, colony.palette.accent, 16, 105);
-          if (colony.id === 0) showHint(`${respawn.tier > 0 ? 'HELPER' : 'HIVE GUARD'} RESPAWNED · 1 NECTAR`, 1.6);
+          state.workers.push(makeWorker(respawn.id, respawn.tier, colony.id)); burst(colony.x, colony.y, colony.palette.accent, 16, 105);
+          if (colony.id === 0) showHint(`${respawn.tier > 0 ? 'WORKER' : 'HIVE GUARD'} RESPAWNED · 1 NECTAR`, 1.6);
           soundGuardReturn(); respawn.done = true; updateHud();
         } else if (!respawn.notified && colony.id === 0) {
           const need = respawn.tier > 0 ? `${requirement} STORED NECTAR` : '1 STORED NECTAR';
@@ -1255,7 +1255,7 @@ const colonyEl = document.querySelector('#colony-count');
         }
       }
     }
-    state.guardRespawns = state.guardRespawns.filter(respawn => !respawn.done);
+    state.workerRespawns = state.workerRespawns.filter(respawn => !respawn.done);
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
     state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0);
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
@@ -1273,7 +1273,7 @@ const colonyEl = document.querySelector('#colony-count');
         state.flowers.push(makeFlower(state.flowers.length, patch));
       }
     }
-    const bees = [state.bee, ...state.guards];
+    const bees = [state.bee, ...state.workers];
     state.flowers = state.flowers.filter(flower => {
       flower.sway += dt * .8;
       if (distance(flower, state.bee) < 170) flower.discovered = true;
@@ -1339,7 +1339,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.hintTimer -= dt;
     if (state.hintTimer <= 0) hintEl.classList.remove('visible');
     state.flash = Math.max(0, state.flash - dt); state.shake *= Math.pow(.035, dt);
-    updateFlowers(dt); updateBee(dt); updateQueens(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt); updateWorldMap(dt);
+    updateFlowers(dt); updateBee(dt); updateQueens(dt); updateEnemies(dt); updateWorkers(dt); updateParticles(dt); updateWorldMap(dt);
   }
 
   function drawGroundBase() {
@@ -1484,7 +1484,7 @@ const colonyEl = document.querySelector('#colony-count');
     ctx.restore();
   }
 
-  function drawGuard(guard) {
+  function drawWorker(guard) {
     if (!onScreen(guard, 45)) return;
     const p = worldToScreen(guard), palette = colonyById(guard.colonyId).palette;
     ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(guard.angle + Math.PI / 2); ctx.scale(.82 * guard.landScale, .82 * guard.landScale);
@@ -1630,7 +1630,7 @@ const colonyEl = document.querySelector('#colony-count');
     for (const wasp of state.wasps) drawWasp(wasp);
     for (const dragon of state.dragonflies) drawDragonfly(dragon);
     for (const queen of state.queens) drawQueen(queen);
-    for (const guard of state.guards) drawGuard(guard);
+    for (const guard of state.workers) drawWorker(guard);
     drawParticles();
     if (state.bee) drawBee(state.bee);
     ctx.restore();
@@ -1819,7 +1819,8 @@ const colonyEl = document.querySelector('#colony-count');
   window.__BEE_DEBUG__ = {
     state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, bankColonyNectar,
     rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, waspAttackDamage, setZoom, nextDay,
-    rememberFlowerPatch, shareFlowerMemory, exchangeFlowerMemory, killGuard, attackHive, destroyColony, chooseRaidHive,
+    makeWorker, spawnUnlockedWorkers, rememberFlowerPatch, shareFlowerMemory, exchangeFlowerMemory,
+    killWorker, attackHive, destroyColony, chooseRaidHive,
     landingCandidate, update, TUNING
   };
   requestAnimationFrame(frame);
