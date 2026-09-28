@@ -5,6 +5,27 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.16.0] - 2026-09-28
+
+### Added
+
+- Every hive now begins with three stored nectar, displayed directly beneath
+  the hive in the world.
+- Wasps can raid hives directly. Each successful strike consumes one nectar
+  and immediately rallies every surviving bee from that colony to defend it.
+- Helpers from any sufficiently established colony can raid rival hives and
+  transfer one nectar to their own hive with each successful rear-sting.
+- Colony AI now weighs its reserve, known safe flowers, travel distance, enemy
+  defenders, and target nectar when choosing between foraging and a hive raid.
+
+### Changed
+
+- A hive is destroyed at zero nectar. Its helpers and queued respawns are
+  removed, and any queens still travelling from that hive are lost.
+- Queen launches still consume 100 gathered nectar while preserving the
+  colony's three-nectar founding reserve.
+- Routine respawns no longer consume a hive's final nectar.
+
 ## [0.15.0] - 2026-09-28
 
 ### Added
