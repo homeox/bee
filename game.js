@@ -23,6 +23,9 @@ const colonyEl = document.querySelector('#colony-count');
   const devPanel = document.querySelector('#dev-panel');
   const devSummary = document.querySelector('#dev-summary');
   const landButton = document.querySelector('[data-control="land"]');
+  const moveJoystick = document.querySelector('#move-joystick');
+  const joystickRing = moveJoystick?.querySelector('.joystick-ring');
+  const joystickKnob = moveJoystick?.querySelector('.joystick-knob');
 
   const TUNING = window.BEE_TUNING || {
     dev: { unlocked: false, startDay: 1, preset: 'standard' },
@@ -49,6 +52,7 @@ const colonyEl = document.querySelector('#colony-count');
     colonies: [], hives: [], queens: [], nextColonyId: 1,
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
+    joystick: { active: false, pointerId: null, angle: 0, magnitude: 0 },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0,
     actionTarget: null, landingTarget: null, actionTime: 0,
     audio: null, wingOsc: null, wingOsc2: null, wingGain: null, wingFilter: null, wingActive: false
@@ -289,6 +293,7 @@ const colonyEl = document.querySelector('#colony-count');
   function clearControls() {
     for (const key of Object.keys(state.keys)) state.keys[key] = false;
     for (const button of document.querySelectorAll('[data-control]')) button.classList.remove('active');
+    resetJoystick();
   }
 
   function resetSession(demo) {
@@ -502,7 +507,7 @@ const colonyEl = document.querySelector('#colony-count');
     const zoneY = clamp(state.height * .34, 108, 250);
     const px = edgePressure(screenX, state.width, zoneX, insetX);
     const py = edgePressure(screenY, state.height, zoneY, insetY);
-    const accelerating = (state.keys.thrust || state.keys.reverse) && !bee.landing;
+    const accelerating = (state.keys.thrust || state.keys.reverse || state.joystick.magnitude > .08) && !bee.landing;
     const targetX = accelerating && Math.sign(bee.vx) === Math.sign(px) ? bee.vx * Math.pow(Math.abs(px), 1.15) * 2.25 : 0;
     const targetY = accelerating && Math.sign(bee.vy) === Math.sign(py) ? bee.vy * Math.pow(Math.abs(py), 1.15) * 2.25 : 0;
     const response = 1 - Math.exp(-(accelerating ? 11 : 4.6) * dt);
@@ -523,7 +528,7 @@ const colonyEl = document.querySelector('#colony-count');
     const bee = state.bee;
     bee.invulnerable = Math.max(0, bee.invulnerable - dt);
     bee.reverseBurst = Math.max(0, bee.reverseBurst - dt);
-    bee.wing += dt * (state.keys.thrust || state.keys.reverse ? 38 : 21);
+    bee.wing += dt * (state.keys.thrust || state.keys.reverse || state.joystick.magnitude > .08 ? 38 : 21);
     bee.landing = state.keys.land;
     if (state.keys.reverse && !bee.wasReversing && !bee.landing) {
       bee.reverseBurst = .48;
@@ -534,13 +539,17 @@ const colonyEl = document.querySelector('#colony-count');
       soundReverseBurst();
     }
     bee.wasReversing = state.keys.reverse;
-    const turn = (state.keys.left ? -1 : 0) + (state.keys.right ? 1 : 0);
+    let turn = (state.keys.left ? -1 : 0) + (state.keys.right ? 1 : 0);
+    if (state.joystick.active && state.joystick.magnitude > .08) {
+      turn = clamp(angleDelta(bee.angle, state.joystick.angle) * 1.8, -1, 1);
+    }
     const speed = Math.hypot(bee.vx, bee.vy);
     const beeWeb = tangledInWeb(bee);
     bee.tangled = Boolean(beeWeb);
     bee.angle += turn * (2.7 + Math.min(speed, 180) / 170) * dt * (beeWeb ? .28 : 1);
     const reversePower = bee.reverseBurst > 0 ? 1.18 : .76;
-    const drive = !bee.landing ? (state.keys.reverse ? -reversePower : state.keys.thrust ? 1 : 0) : 0;
+    const joystickDrive = state.joystick.active && state.joystick.magnitude > .08 ? state.joystick.magnitude : 0;
+    const drive = !bee.landing ? (state.keys.reverse ? -reversePower : joystickDrive || (state.keys.thrust ? 1 : 0)) : 0;
     if (drive !== 0) {
       const thrust = 245 * drive;
       bee.vx += Math.cos(bee.angle) * thrust * dt;
@@ -1501,7 +1510,41 @@ const colonyEl = document.querySelector('#colony-count');
     if (event.key === 'Enter' && !state.running) beginGame();
   });
   addEventListener('keyup', event => { if (keyMap[event.key]) { state.keys[keyMap[event.key]] = false; event.preventDefault(); } });
-  addEventListener('blur', () => { for (const key of Object.keys(state.keys)) if (key !== 'land') state.keys[key] = false; if (state.running && !state.paused) togglePause(); });
+  addEventListener('blur', () => { for (const key of Object.keys(state.keys)) if (key !== 'land') state.keys[key] = false; resetJoystick(); if (state.running && !state.paused) togglePause(); });
+
+  function resetJoystick(pointerId = null) {
+    if (pointerId !== null && state.joystick.pointerId !== pointerId) return;
+    state.joystick.active = false; state.joystick.pointerId = null; state.joystick.magnitude = 0;
+    moveJoystick?.classList.remove('active');
+    if (joystickKnob) joystickKnob.style.transform = 'translate(-50%, -50%)';
+  }
+
+  function updateJoystick(event) {
+    if (!joystickRing || event.pointerId !== state.joystick.pointerId) return;
+    const rect = joystickRing.getBoundingClientRect();
+    const dx = event.clientX - (rect.left + rect.width / 2);
+    const dy = event.clientY - (rect.top + rect.height / 2);
+    const travel = rect.width * .31;
+    const length = Math.hypot(dx, dy);
+    const scale = length > travel ? travel / length : 1;
+    const knobX = dx * scale, knobY = dy * scale;
+    state.joystick.angle = Math.atan2(dy, dx);
+    state.joystick.magnitude = clamp(length / travel, 0, 1);
+    joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+  }
+
+  if (moveJoystick && joystickRing && joystickKnob) {
+    moveJoystick.addEventListener('pointerdown', event => {
+      if (!state.running || state.paused) return;
+      event.preventDefault(); unlockAudio();
+      state.joystick.active = true; state.joystick.pointerId = event.pointerId;
+      moveJoystick.classList.add('active'); moveJoystick.setPointerCapture(event.pointerId); updateJoystick(event);
+    });
+    moveJoystick.addEventListener('pointermove', event => { if (state.joystick.active) { event.preventDefault(); updateJoystick(event); } });
+    moveJoystick.addEventListener('pointerup', event => { event.preventDefault(); resetJoystick(event.pointerId); });
+    moveJoystick.addEventListener('pointercancel', event => resetJoystick(event.pointerId));
+    moveJoystick.addEventListener('lostpointercapture', event => resetJoystick(event.pointerId));
+  }
 
   for (const button of document.querySelectorAll('[data-control]')) {
     const control = button.dataset.control;

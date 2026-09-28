@@ -66,13 +66,12 @@
     </aside>
 
     <nav id="touch-controls" class="touch-controls" aria-label="Touch controls">
-      <div class="turn-controls">
-        <button data-control="left" aria-label="Turn left">‹</button>
-        <button data-control="reverse" class="reverse-button" aria-label="Fly backward">▼</button>
-        <button data-control="right" aria-label="Turn right">›</button>
+      <div id="move-joystick" class="move-joystick" role="button" aria-label="Move bee" tabindex="0">
+        <div class="joystick-ring"><i class="joystick-knob"></i></div>
+        <span>MOVE</span>
       </div>
       <div class="action-controls">
-        <button data-control="thrust" class="fly-button" aria-label="Fly forward">▲</button>
+        <button data-control="reverse" class="attack-button" aria-label="Reverse attack">ATTACK</button>
         <button data-control="land" class="land-button" aria-label="Land and gather">LAND</button>
       </div>
     </nav>

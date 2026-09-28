@@ -5,6 +5,19 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.13.0] - 2026-09-28
+
+### Added
+
+- A native Android port powered by a Capacitor shell, with repeatable web asset
+  sync and debug APK build commands, Bee launcher/splash art, immersive
+  sensor-landscape play, cutout support, and screen-awake behavior.
+- Mobile movement now uses an analog thumb joystick. Its direction steers the
+  bee and its distance from center controls forward thrust strength.
+- The opposite side now has only two large actions: held ATTACK engages reverse
+  thrust and the rear stinger, while LAND retains its tap-to-land/tap-to-launch
+  toggle behavior.
+
 ## [0.12.1] - 2026-09-28
 
 ### Changed

@@ -101,22 +101,27 @@ kbd { min-width: 23px; padding: 5px; border: 2px solid rgba(48,65,32,.45); borde
 
 @media (pointer: coarse), (max-width: 760px) {
   .hud-title, .instructions { display: none; }
-  .touch-controls { position: absolute; z-index: 4; left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; justify-content: space-between; pointer-events: none; }
-  .turn-controls, .action-controls { display: flex; align-items: end; gap: 7px; }
-  .touch-controls button { pointer-events: auto; width: clamp(58px, 16vw, 78px); height: clamp(58px, 16vw, 78px); border: 2px solid rgba(255,249,206,.58); border-radius: 50%; color: #fff8dc; background: rgba(36,93,55,.58); box-shadow: inset 0 0 18px rgba(255,255,255,.07), 0 4px 14px rgba(23,65,34,.2); font: 800 32px/1 "Baloo 2", sans-serif; -webkit-tap-highlight-color: transparent; }
+  .touch-controls { position: absolute; z-index: 4; left: max(18px, env(safe-area-inset-left)); right: max(18px, env(safe-area-inset-right)); bottom: max(18px, env(safe-area-inset-bottom)); display: flex; align-items: end; justify-content: space-between; pointer-events: none; }
+  .move-joystick { pointer-events: auto; display: grid; justify-items: center; gap: 5px; color: rgba(255,248,220,.82); font-size: 9px; font-weight: 800; letter-spacing: .12em; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  .joystick-ring { position: relative; width: clamp(116px, 23vw, 164px); height: clamp(116px, 23vw, 164px); border: 3px solid rgba(255,249,206,.62); border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.08) 0 18%, rgba(36,93,55,.58) 20% 100%); box-shadow: inset 0 0 30px rgba(15,59,31,.28), 0 6px 20px rgba(23,65,34,.28); }
+  .joystick-ring::before, .joystick-ring::after { content: ""; position: absolute; inset: 50% 17%; height: 1px; background: rgba(255,249,206,.18); }
+  .joystick-ring::after { transform: rotate(90deg); }
+  .joystick-knob { position: absolute; left: 50%; top: 50%; width: 45%; height: 45%; transform: translate(-50%,-50%); border: 2px solid rgba(255,249,206,.75); border-radius: 50%; background: linear-gradient(145deg, rgba(255,218,77,.92), rgba(211,142,20,.9)); box-shadow: inset 0 4px 8px rgba(255,255,255,.25), 0 5px 14px rgba(44,45,20,.35); }
+  .move-joystick.active .joystick-ring { border-color: #ffe36f; box-shadow: inset 0 0 30px rgba(255,202,40,.2), 0 0 18px rgba(255,216,72,.22); }
+  .action-controls { display: flex; align-items: end; gap: clamp(10px, 2vw, 18px); pointer-events: none; }
+  .touch-controls button { pointer-events: auto; width: clamp(82px, 14vw, 112px); height: clamp(82px, 14vw, 112px); border: 2px solid rgba(255,249,206,.58); border-radius: 50%; color: #fff8dc; background: rgba(36,93,55,.64); box-shadow: inset 0 0 18px rgba(255,255,255,.07), 0 5px 16px rgba(23,65,34,.28); font: 800 11px/1 "Baloo 2", sans-serif; letter-spacing: .06em; -webkit-tap-highlight-color: transparent; }
   .touch-controls button.active { background: rgba(255,194,28,.86); color: #3e3014; transform: scale(.95); }
-  .touch-controls .land-button { width: clamp(66px, 18vw, 86px); height: clamp(66px, 18vw, 86px); border-color: rgba(255,226,105,.82); background: rgba(166,105,12,.68); font-size: 10px; letter-spacing: .06em; }
-  .touch-controls .fly-button { font-size: 20px; }
-  .touch-controls .reverse-button { width: clamp(46px, 12vw, 58px); height: clamp(46px, 12vw, 58px); font-size: 16px; }
+  .touch-controls .attack-button { border-color: rgba(255,173,104,.88); background: rgba(151,58,35,.76); }
+  .touch-controls .attack-button.active { background: rgba(244,112,48,.94); color: #fff8dc; }
+  .touch-controls .land-button { border-color: rgba(255,226,105,.82); background: rgba(166,105,12,.72); }
   .icon-button { bottom: auto; top: max(85px, calc(env(safe-area-inset-top) + 81px)); width: 34px; height: 34px; }
   .panel { padding-bottom: 14vh; }
   .hint { top: 100px; }
 }
 
 @media (max-width: 420px) {
-  .action-controls, .turn-controls { gap: 3px; }
+  .action-controls { gap: 6px; }
   .touch-controls { left: 6px; right: 6px; }
-  .touch-controls button { width: 49px; height: 49px; }
-  .touch-controls .reverse-button { width: 42px; height: 42px; }
-  .touch-controls .land-button { width: 59px; height: 59px; }
+  .joystick-ring { width: 98px; height: 98px; }
+  .touch-controls button { width: 64px; height: 64px; font-size: 9px; }
 }

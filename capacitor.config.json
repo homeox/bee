@@ -1,0 +1,9 @@
+{
+  "appId": "com.homeox.bee",
+  "appName": "Bee",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#285f35"
+  }
+}

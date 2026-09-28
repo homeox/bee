@@ -29,7 +29,7 @@ Opening `index.html` directly also works, except PWA installation requires a web
 - Reverse/attack: Arrow Down or S (a short burst is faster than forward flight)
 - Land/gather/unload: Space (press once near a flower or the hive to land, then press again to launch)
 - Pause: P or Escape
-- Mobile: on-screen multi-touch controls
+- Mobile: analog movement joystick plus held ATTACK/reverse and toggle LAND buttons
 
 ## Developer launch controls
 
@@ -41,9 +41,19 @@ http://localhost:4174/?dev=hivelab&day=8&preset=chaos&enemies=3
 
 Presets are `peaceful`, `forager`, `swarm`, and `chaos`. Feature switches are `wasps`, `dragonflies`, `spiders`, and `webs`. Balance controls are `flowers=0.5..3`, `enemies=0.25..3`, `capacity=1..8`, and `invincible=1`. Use `nectar=125` to begin with enough gathered nectar to pay the helper milestones and immediately launch a 100-nectar queen for colony testing.
 
-## Phone packaging
+## Android port
 
-The game is responsive and installable as a Progressive Web App. It can also be wrapped for Android or iOS with Capacitor without changing the core game.
+The Android port uses Capacitor while keeping the root web files as the source of truth. It targets Android SDK 34, supports Android 5.1 and newer, runs in immersive sensor-landscape mode, respects display cutouts, keeps the screen awake during play, and bundles all game assets for offline use.
+
+```bash
+npm install
+npm run mobile:build
+adb install -r android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+`mobile:build` first copies the current web game into the ignored `www/` staging directory, synchronizes it into the native project, and builds the debug APK. Gradle uses the SDK from `ANDROID_HOME`, `ANDROID_SDK_ROOT`, or `android/local.properties`.
+
+The Progressive Web App remains available as a lighter install option, and the same Capacitor structure can be extended with an iOS target later without changing the game engine.
 
 ## License
 
