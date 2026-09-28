@@ -22,7 +22,10 @@
   const enabled = (name, fallback = true) => flag(name, presets[name] ?? fallback);
 
   window.BEE_TUNING = {
-    dev: { unlocked, code: 'hivelab', startDay: number('day', 1, 1, 30), preset: preset || 'standard' },
+    dev: {
+      unlocked, code: 'hivelab', startDay: number('day', 1, 1, 30),
+      startNectar: number('nectar', 0, 0, 500), preset: preset || 'standard'
+    },
     features: { wasps: enabled('wasps'), dragonflies: enabled('dragonflies'), spiders: enabled('spiders'), webs: enabled('webs') },
     balance: {
       flowers: number('flowers', 1, .5, 3), enemies: number('enemies', 1, .25, 3),

@@ -30,7 +30,8 @@ const colonyEl = document.querySelector('#colony-count');
     balance: { flowers: 1, enemies: 1, nectarCapacity: 3, playerDamage: 1 }
   };
   const TAU = Math.PI * 2;
-  const WORLD_RADIUS = 3100;
+  const WORLD_RADIUS = 4800;
+  const QUEEN_COST = 100;
   const FLOWER_TYPES = [
     { petal: '#fff6ef', core: '#f5b91d', petals: 7, name: 'daisy' },
     { petal: '#d780d4', core: '#ffd447', petals: 6, name: 'clover' },
@@ -45,6 +46,7 @@ const colonyEl = document.querySelector('#colony-count');
     dayNectar: 0, dayGoal: 6, shake: 0, flash: 0, bee: null,
     flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
     obstacles: [], worldMap: { cell: 500, cells: {} }, mapTimer: 0,
+    colonies: [], hives: [], queens: [], nextColonyId: 1,
     camera: { x: 0, y: 0, vx: 0, vy: 0 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0,
@@ -90,13 +92,43 @@ const colonyEl = document.querySelector('#colony-count');
     };
   }
 
-  function makeGuard(id, tier = 0) {
+  function colonyPalette(id) {
+    if (id === 0) return { body: '#eeb51d', stripe: '#247887', accent: '#7fe3ea', dark: '#26332d', hive: '#d89117', hiveDark: '#79510c' };
+    const hue = (38 + id * 79) % 360;
+    return {
+      body: `hsl(${hue} 70% 54%)`, stripe: `hsl(${(hue + 155) % 360} 55% 38%)`,
+      accent: `hsl(${(hue + 155) % 360} 72% 68%)`, dark: `hsl(${hue} 32% 19%)`,
+      hive: `hsl(${hue} 66% 46%)`, hiveDark: `hsl(${hue} 52% 27%)`
+    };
+  }
+
+  function makeColony(id, x, y, parentId = null) {
+    return {
+      id, x, y, parentId, palette: colonyPalette(id), score: 0, totalNectar: 0,
+      helperTiersSpawned: [], nextGuardId: 2, foundedAt: state.elapsed, queensFounded: 0
+    };
+  }
+
+  function colonyById(id) { return state.colonies.find(colony => colony.id === id) || state.colonies[0]; }
+  function colonyBank(colony) { return colony.id === 0 ? state.score : colony.score; }
+  function setColonyBank(colony, value) { if (colony.id === 0) state.score = value; else colony.score = value; }
+  function colonyTotal(colony) { return colony.id === 0 ? state.totalNectar : colony.totalNectar; }
+  function setColonyTotal(colony, value) { if (colony.id === 0) state.totalNectar = value; else colony.totalNectar = value; }
+  function worldNectarTotal() { return state.colonies.reduce((sum, colony) => sum + colonyTotal(colony), 0); }
+  function predatorHealth(base, step) { return base + Math.floor(worldNectarTotal() / step); }
+  function raisePredatorHealth(enemy, target) {
+    if (enemy.maxHealth >= target) return;
+    enemy.health += target - enemy.maxHealth; enemy.maxHealth = target;
+  }
+
+  function makeGuard(id, tier = 0, colonyId = 0) {
+    const colony = colonyById(colonyId);
     const angle = id * Math.PI;
     return {
-      id, x: Math.cos(angle) * 92, y: Math.sin(angle) * 92, vx: 0, vy: 0, angle,
+      id, colonyId, x: colony.x + Math.cos(angle) * 92, y: colony.y + Math.sin(angle) * 92, vx: 0, vy: 0, angle,
       radius: 14, health: 3, maxHealth: 3, attackCooldown: random(.2, .7),
       hit: 0, wing: random(0, TAU), target: null, tier, nectar: 0, forageTarget: null,
-      actionTime: 0, landScale: 1, sheltered: false, role: 'alternate'
+      actionTime: 0, landScale: 1, sheltered: false, role: 'alternate', stingAnim: 0, lastPlayerSting: -1
     };
   }
 
@@ -124,13 +156,14 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function makeWeb(pos = randomMeadowPoint(650, WORLD_RADIUS - 300)) {
-    return { ...pos, radius: random(74, 118), rotation: random(0, TAU), glint: random(0, TAU) };
+    return { ...pos, radius: random(74, 118), rotation: random(0, TAU), glint: random(0, TAU), managed: true };
   }
 
   function makeSpider(web) {
+    const health = predatorHealth(3, 35);
     return {
       x: web.x + random(-18, 18), y: web.y + random(-18, 18), homeX: web.x, homeY: web.y, webRadius: web.radius, web,
-      vx: 0, vy: 0, radius: 19, health: 3, maxHealth: 3, cooldown: random(0, 2), angle: random(0, TAU), phase: random(0, TAU)
+      species: 'spider', vx: 0, vy: 0, radius: 19, health, maxHealth: health, cooldown: random(0, 2), angle: random(0, TAU), phase: random(0, TAU)
     };
   }
 
@@ -167,6 +200,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.mapTimer = .25;
     mapCell(state.bee.x, state.bee.y).seen = true;
     for (const guard of state.guards) mapCell(guard.x, guard.y).seen = true;
+    for (const queen of state.queens) mapCell(queen.x, queen.y).seen = true;
   }
 
   function growWeb(spider) {
@@ -195,10 +229,11 @@ const colonyEl = document.querySelector('#colony-count');
     if (!TUNING.features.wasps || !state.bee) return null;
     const angle = random(0, TAU);
     const radius = random(520, 760);
+    const health = predatorHealth(4, 25);
     const wasp = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
-      vx: 0, vy: 0, angle: angle + Math.PI, radius: 24, health: 4 + Math.floor(state.day / 6),
-      maxHealth: 4 + Math.floor(state.day / 6), phase: random(0, TAU), hit: 0, lastSting: -1
+      species: 'wasp', vx: 0, vy: 0, angle: angle + Math.PI, radius: 24, health,
+      maxHealth: health, phase: random(0, TAU), hit: 0, lastSting: -1
     };
     state.wasps.push(wasp);
     showHint('⚠ WASP IN THE MEADOW', 2.4);
@@ -210,10 +245,11 @@ const colonyEl = document.querySelector('#colony-count');
     if (!TUNING.features.dragonflies || !state.bee) return null;
     const angle = random(0, TAU);
     const radius = random(900, 1300);
+    const health = predatorHealth(2, 50);
     const dragonfly = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
       vx: -Math.cos(angle) * 220, vy: -Math.sin(angle) * 220, angle: angle + Math.PI,
-      radius: 25, health: 2, maxHealth: 2, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1,
+      species: 'dragonfly', radius: 25, health, maxHealth: health, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1,
       sated: false, leaving: 0, gone: false
     };
     state.dragonflies.push(dragonfly);
@@ -247,6 +283,7 @@ const colonyEl = document.querySelector('#colony-count');
       state.obstacles.push({ x: spot.x, y: spot.y, radius, kind, sway: random(0, TAU) });
       registerMapFeature(kind, spot.x, spot.y, radius);
     }
+    for (const hive of state.hives) registerMapFeature('hive', hive.x, hive.y, 110);
   }
 
   function clearControls() {
@@ -260,11 +297,13 @@ const colonyEl = document.querySelector('#colony-count');
     state.score = 0; state.totalNectar = 0; state.lives = 3;
     state.day = TUNING.dev.startDay; state.dayNectar = 0; state.dayGoal = 4 + state.day * 2;
     state.wasps = []; state.dragonflies = []; state.particles = [];
-    state.guards = [makeGuard(0, 0), makeGuard(1, 0)]; state.guardRespawns = []; state.helperTiersSpawned = [];
+    state.colonies = [makeColony(0, 0, 0)]; state.hives = [state.colonies[0]]; state.queens = []; state.nextColonyId = 1;
+    state.guards = [makeGuard(0, 0, 0), makeGuard(1, 0, 0)]; state.guardRespawns = []; state.helperTiersSpawned = [];
     state.bee = makeBee(); state.actionTarget = null; state.landingTarget = null; state.actionTime = 0; state.reverseSerial = 0;
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
+    if (TUNING.dev.unlocked && TUNING.dev.startNectar > 0) bankNectar(TUNING.dev.startNectar, false);
     state.flowerTimer = TUNING.balance.flowerSpawn;
     startPanel.classList.toggle('visible', demo); overPanel.classList.remove('visible'); pauseLabel.classList.remove('visible');
     progressEl.classList.remove('visible'); hintEl.classList.remove('visible');
@@ -308,47 +347,121 @@ const colonyEl = document.querySelector('#colony-count');
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
     const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
     dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
-    if (colonyEl) colonyEl.textContent = `${state.guards.length + 1}/${availableHelpers + 1}`;
+    const homeHelpers = state.guards.filter(guard => guard.colonyId === 0).length;
+    if (colonyEl) colonyEl.textContent = `${homeHelpers + 1}/${availableHelpers + 1}${state.hives.length > 1 ? ` · ${state.hives.length} HIVES` : ''}`;
   }
 
-  function spawnUnlockedHelpers() {
-    const unlocked = Math.floor(state.totalNectar / 5);
+  function spawnUnlockedHelpers(colony = state.colonies[0]) {
+    const total = colonyTotal(colony);
+    const unlocked = Math.floor(total / 5);
+    const spawned = colony.id === 0 ? state.helperTiersSpawned : colony.helperTiersSpawned;
     for (let tier = 1; tier <= unlocked; tier++) {
-      if (state.helperTiersSpawned.includes(tier) || state.score < 1) continue;
-      state.score--;
-      state.helperTiersSpawned.push(tier);
-      state.guards.push(makeGuard(tier + 1, tier));
-      burst(0, 0, '#9de6e2', 20, 120);
-      showHint(`NEW HELPER BEE · ${tier * 5} NECTAR MILESTONE`, 2.2);
+      if (spawned.includes(tier) || colonyBank(colony) < 1) continue;
+      setColonyBank(colony, colonyBank(colony) - 1);
+      spawned.push(tier);
+      const id = colony.id === 0 ? tier + 1 : colony.id * 10000 + colony.nextGuardId++;
+      state.guards.push(makeGuard(id, tier, colony.id));
+      burst(colony.x, colony.y, colony.palette.accent, 20, 120);
+      if (colony.id === 0) showHint(`NEW HELPER BEE · ${tier * 5} NECTAR MILESTONE`, 2.2);
       soundGuardReturn();
     }
   }
 
-  function bankNectar(amount, announce = true) {
+  function bankColonyNectar(colony, amount, announce = false) {
     if (amount <= 0) return;
-    state.score += amount;
-    state.totalNectar += amount;
-    state.dayNectar += amount;
-    spawnUnlockedHelpers();
-    if (announce) showHint(`DELIVERED ${amount} NECTAR`, 1.5);
-    if (state.dayNectar >= state.dayGoal) nextDay();
+    setColonyBank(colony, colonyBank(colony) + amount);
+    setColonyTotal(colony, colonyTotal(colony) + amount);
+    if (colony.id === 0) state.dayNectar += amount;
+    spawnUnlockedHelpers(colony);
+    maybeLaunchQueen(colony);
+    if (announce && colony.id === 0) showHint(`DELIVERED ${amount} NECTAR`, 1.5);
+    if (colony.id === 0 && state.dayNectar >= state.dayGoal) nextDay();
     updateHud();
   }
 
-  function rewardKill(enemy) {
+  function bankNectar(amount, announce = true) { bankColonyNectar(state.colonies[0], amount, announce); }
+
+  function rewardColony(colony, amount, announce = false) {
+    setColonyBank(colony, colonyBank(colony) + amount);
+    if (announce && colony.id === 0) showHint(`+${amount} NECTAR`, .8);
+    maybeLaunchQueen(colony);
+    updateHud();
+  }
+
+  function rewardKill(enemy, colonyId = 0) {
     if (enemy.rewarded) return;
     enemy.rewarded = true;
-    state.score += 2;
+    const colony = colonyById(colonyId);
+    rewardColony(colony, 2, colony.id === 0);
     burst(enemy.x, enemy.y, '#ffd83f', 14, 130);
-    showHint('+2 NECTAR', .8);
-    updateHud();
+  }
+
+  function chooseQueenSite(colony) {
+    let fallback = randomMeadowPoint(900, WORLD_RADIUS - 260);
+    for (let attempt = 0; attempt < 80; attempt++) {
+      const angle = random(0, TAU);
+      const travel = random(1350, 2250);
+      const candidate = { x: colony.x + Math.cos(angle) * travel, y: colony.y + Math.sin(angle) * travel };
+      const radius = Math.hypot(candidate.x, candidate.y);
+      if (radius > WORLD_RADIUS - 260) continue;
+      if (state.hives.some(hive => distance(candidate, hive) < 1100)) continue;
+      if (state.obstacles.some(obstacle => distance(candidate, obstacle) < obstacle.radius + 180)) continue;
+      fallback = candidate;
+      if (!mapCell(candidate.x, candidate.y).seen) return candidate;
+    }
+    return fallback;
+  }
+
+  function maybeLaunchQueen(colony) {
+    if (!colony || colonyBank(colony) < QUEEN_COST || state.queens.some(queen => queen.sourceColonyId === colony.id)) return null;
+    setColonyBank(colony, colonyBank(colony) - QUEEN_COST);
+    const destination = chooseQueenSite(colony);
+    const futureId = state.nextColonyId++;
+    const queen = {
+      id: futureId, sourceColonyId: colony.id, x: colony.x, y: colony.y - 58, vx: 0, vy: 0,
+      targetX: destination.x, targetY: destination.y, angle: -Math.PI / 2, radius: 22,
+      wing: random(0, TAU), palette: colonyPalette(futureId), founded: false
+    };
+    state.queens.push(queen);
+    colony.queensFounded++;
+    burst(colony.x, colony.y, colony.palette.accent, 32, 155);
+    if (colony.id === 0) showHint('QUEEN LAUNCHED · 100 NECTAR · NEW HIVE BOUND', 3);
+    soundDay(); updateHud();
+    return queen;
+  }
+
+  function foundColony(queen) {
+    const colony = makeColony(queen.id, queen.targetX, queen.targetY, queen.sourceColonyId);
+    state.colonies.push(colony); state.hives.push(colony);
+    state.guards.push(makeGuard(colony.id * 10000, 0, colony.id), makeGuard(colony.id * 10000 + 1, 0, colony.id));
+    registerMapFeature('hive', colony.x, colony.y, 110);
+    burst(colony.x, colony.y, colony.palette.accent, 42, 180);
+    showHint(`A NEW RIVAL HIVE HAS BEEN FOUNDED · COLONY ${colony.id + 1}`, 3.2);
+    soundGuardReturn(); updateHud();
+    queen.founded = true;
+    return colony;
+  }
+
+  function updateQueens(dt) {
+    for (const queen of state.queens) {
+      queen.wing += dt * 38;
+      const desired = Math.atan2(queen.targetY - queen.y, queen.targetX - queen.x);
+      queen.angle += angleDelta(queen.angle, desired) * Math.min(1, dt * 3.8);
+      queen.vx += Math.cos(queen.angle) * 185 * dt * 2.8;
+      queen.vy += Math.sin(queen.angle) * 185 * dt * 2.8;
+      queen.vx *= Math.pow(.12, dt); queen.vy *= Math.pow(.12, dt);
+      queen.x += queen.vx * dt; queen.y += queen.vy * dt;
+      resolveObstacles(queen);
+      if (Math.hypot(queen.targetX - queen.x, queen.targetY - queen.y) < 42) foundColony(queen);
+    }
+    state.queens = state.queens.filter(queen => !queen.founded);
   }
 
   function killGuard(guard) {
     if (guard.dead) return;
     guard.dead = true;
     burst(guard.x, guard.y, '#78d1db', 22, 165);
-    state.guardRespawns.push({ id: guard.id, tier: guard.tier, timer: 4.5, notified: false });
+    state.guardRespawns.push({ id: guard.id, tier: guard.tier, colonyId: guard.colonyId, timer: 4.5, notified: false });
     soundGuardDown();
   }
 
@@ -633,9 +746,13 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function updateEnemies(dt) {
+    for (const spider of state.spiders) if (spider.web) spider.web.owned = true;
     state.waspTimer -= dt;
     state.dragonflyTimer -= dt;
-    const nectar = state.totalNectar;
+    const nectar = worldNectarTotal();
+    for (const wasp of state.wasps) if (wasp.species === 'wasp') raisePredatorHealth(wasp, predatorHealth(4, 25));
+    for (const spider of state.spiders) if (spider.species === 'spider') raisePredatorHealth(spider, predatorHealth(3, 35));
+    for (const dragon of state.dragonflies) if (dragon.species === 'dragonfly') raisePredatorHealth(dragon, predatorHealth(2, 50));
     const maxWasps = Math.min(10, TUNING.balance.enemyBaseline + Math.floor(nectar / TUNING.balance.enemyNectarStep));
     if (state.waspTimer <= 0 && state.wasps.length < maxWasps) {
       spawnWasp();
@@ -759,7 +876,7 @@ const colonyEl = document.querySelector('#colony-count');
           spider.cooldown = .9;
           burst(prey.x, prey.y, '#7ad0c0', 9, 80);
           if (prey === state.bee) {
-            damageBee(spider.x, spider.y, 1);
+            if (damageBee(spider.x, spider.y, 1)) growWeb(spider);
           } else {
             prey.health--; prey.hit = .2;
             if (prey.health <= 0) {
@@ -788,34 +905,42 @@ const colonyEl = document.querySelector('#colony-count');
     }
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
     state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0 && !enemy.gone);
-    const deadWebs = [];
-    for (const spider of state.spiders) if (spider.health <= 0 && spider.web) deadWebs.push(spider.web);
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
-    if (deadWebs.length) state.webs = state.webs.filter(web => deadWebs.indexOf(web) === -1);
+    state.webs = state.webs.filter(web => state.spiders.some(spider => spider.web === web && spider.health > 0) || (!web.managed && !web.owned));
   }
 
   function updateGuards(dt) {
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
-    let helperDeposits = 0;
+    const deposits = new Map();
     const guardsBefore = state.guards.length;
-    const roster = state.guards.filter(guard => guard.health > 0).sort((a, b) => a.id - b.id);
-    const foragerId = roster.length >= 2 ? roster[0].id : null;
-    const hiveGuardId = roster.length >= 2 ? roster[1].id : null;
-    for (const guard of state.guards) {
+    const roles = new Map();
+    for (const colony of state.colonies) {
+      const roster = state.guards.filter(guard => guard.health > 0 && guard.colonyId === colony.id).sort((a, b) => a.id - b.id);
+      if (roster[0]) roles.set(roster[0], 'forage');
+      if (roster[1]) roles.set(roster[1], 'guard');
+      for (const guard of roster.slice(2)) roles.set(guard, 'alternate');
+    }
+    for (const guard of [...state.guards]) {
       if (guard.health <= 0) continue;
-      guard.role = guard.id === foragerId ? 'forage' : guard.id === hiveGuardId ? 'guard' : 'alternate';
+      const colony = colonyById(guard.colonyId), hive = colony;
+      guard.role = roles.get(guard) || 'alternate';
       guard.hit = Math.max(0, guard.hit - dt); guard.attackCooldown -= dt; guard.wing += dt * 32;
       let target = null, targetKind = 'patrol', best = Infinity;
       for (const enemy of enemies) {
-        const hiveDistance = Math.hypot(enemy.x, enemy.y);
-        const guardDistance = distance(guard, enemy);
+        const hiveDistance = distance(enemy, hive), guardDistance = distance(guard, enemy);
         if ((hiveDistance < 520 || guardDistance < 235) && guardDistance < best) { best = guardDistance; target = enemy; targetKind = 'enemy'; }
       }
+      const rivalBees = state.guards.filter(other => other !== guard && other.health > 0 && other.colonyId !== guard.colonyId && !other.sheltered);
+      if (guard.colonyId !== 0 && !state.bee.sheltered) rivalBees.push(state.bee);
+      for (const rival of rivalBees) {
+        const hiveDistance = distance(rival, hive), guardDistance = distance(guard, rival);
+        if ((hiveDistance < 620 || guardDistance < 285) && guardDistance < best) { best = guardDistance; target = rival; targetKind = 'rival'; }
+      }
       let goalX, goalY, speed, arrival = 0;
-      if (targetKind === 'enemy') {
+      if (targetKind === 'enemy' || targetKind === 'rival') {
         goalX = target.x; goalY = target.y; speed = 180;
       } else if (guard.nectar > 0) {
-        target = { x: 0, y: 0 }; targetKind = 'hive'; goalX = 0; goalY = 0; speed = 150; arrival = 92;
+        target = hive; targetKind = 'hive'; goalX = hive.x; goalY = hive.y; speed = 150; arrival = 92;
       } else {
         const shouldForage = guard.role === 'forage' ? true
           : guard.role === 'guard' ? false
@@ -829,77 +954,90 @@ const colonyEl = document.querySelector('#colony-count');
           target = guard.forageTarget; targetKind = 'flower'; goalX = target.x; goalY = target.y; speed = 138; arrival = target.size + 24;
         } else {
           const patrol = state.elapsed * .62 + guard.id * Math.PI;
-          goalX = Math.cos(patrol) * (112 + guard.tier * 9); goalY = Math.sin(patrol) * (82 + guard.tier * 7); speed = 115;
+          goalX = hive.x + Math.cos(patrol) * (112 + guard.tier * 9);
+          goalY = hive.y + Math.sin(patrol) * (82 + guard.tier * 7); speed = 115;
         }
       }
       guard.target = target;
-      const retro = targetKind === 'enemy';
-      const desired = retro
-        ? Math.atan2(guard.y - target.y, guard.x - target.x)
-        : Math.atan2(goalY - guard.y, goalX - guard.x);
+      const retro = targetKind === 'enemy' || targetKind === 'rival';
+      const desired = retro ? Math.atan2(guard.y - target.y, guard.x - target.x) : Math.atan2(goalY - guard.y, goalX - guard.x);
       const goalDistance = Math.hypot(goalX - guard.x, goalY - guard.y);
       const landed = arrival > 0 && goalDistance < arrival && Math.hypot(guard.vx, guard.vy) < 70;
       const guardWeb = landed ? null : tangledInWeb(guard);
       guard.tangled = Boolean(guardWeb);
       guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * (guardWeb ? 3 : 6));
       guard.sheltered = landed;
+      guard.stingAnim += ((retro && !landed ? 1 : 0) - guard.stingAnim) * (1 - Math.exp(-14 * dt));
       guard.landScale += ((landed ? .68 : 1) - guard.landScale) * (1 - Math.exp(-10 * dt));
       if (landed) {
-        guard.vx *= Math.pow(.04, dt); guard.vy *= Math.pow(.04, dt);
-        guard.actionTime += dt;
+        guard.vx *= Math.pow(.04, dt); guard.vy *= Math.pow(.04, dt); guard.actionTime += dt;
         if (targetKind === 'flower' && guard.actionTime >= 1.05) {
           target.spent = true; target.nectar = 0; guard.nectar = 1; guard.forageTarget = null; guard.actionTime = 0;
           burst(target.x, target.y, target.type.petal, 12, 70); soundCollect();
         } else if (targetKind === 'hive' && guard.actionTime >= .75) {
-          guard.nectar = 0; helperDeposits++; guard.actionTime = 0; burst(0, 0, '#8ee6e9', 7, 70);
+          guard.nectar = 0; deposits.set(colony.id, (deposits.get(colony.id) || 0) + 1); guard.actionTime = 0;
+          burst(hive.x, hive.y, colony.palette.accent, 7, 70);
         }
       } else if (guardWeb) {
-        guard.actionTime = 0;
-        webWiggle(guard, guardWeb, dt, guard.id, .06);
+        guard.actionTime = 0; webWiggle(guard, guardWeb, dt, guard.id, .06);
       } else {
         guard.actionTime = 0;
         const ease = retro ? Math.max(0, Math.min(1, (goalDistance - 66) / 44)) : (arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1);
-        const drive = retro ? -1 : 1;
-        guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3 * drive;
-        guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3 * drive;
+        guard.vx += Math.cos(guard.angle) * speed * ease * dt * 3 * (retro ? -1 : 1);
+        guard.vy += Math.sin(guard.angle) * speed * ease * dt * 3 * (retro ? -1 : 1);
         guard.vx *= Math.pow(.05, dt); guard.vy *= Math.pow(.05, dt);
       }
-      guard.x += guard.vx * dt; guard.y += guard.vy * dt;
-      resolveObstacles(guard);
-      if (targetKind === 'enemy' && target && guard.attackCooldown <= 0) {
-        const stinger = {
-          x: guard.x - Math.cos(guard.angle) * 35,
-          y: guard.y - Math.sin(guard.angle) * 35
-        };
+      guard.x += guard.vx * dt; guard.y += guard.vy * dt; resolveObstacles(guard);
+      if (retro && target && guard.attackCooldown <= 0 && guard.health > 0) {
+        const stinger = { x: guard.x - Math.cos(guard.angle) * 35, y: guard.y - Math.sin(guard.angle) * 35 };
         if (distance(stinger, target) < target.radius + 11) {
-          guard.attackCooldown = .72;
-          target.health--; target.hit = .16;
+          guard.attackCooldown = .72; guard.stingAnim = 1;
           const angle = Math.atan2(target.y - guard.y, target.x - guard.x);
-          target.vx = (target.vx || 0) + Math.cos(angle) * 145;
-          target.vy = (target.vy || 0) + Math.sin(angle) * 145;
-          burst((guard.x + target.x) / 2, (guard.y + target.y) / 2, '#ffd83f', 10, 110); soundHit();
-          if (target.health <= 0) { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target); }
-        } else if (distance(guard, target) < guard.radius + target.radius + 3) {
-          guard.attackCooldown = .72;
-          guard.health--; guard.hit = .22;
-          burst(guard.x, guard.y, '#83d8e3', 10, 110); soundHit();
+          if (target === state.bee) {
+            if (damageBee(guard.x, guard.y, 1)) rewardColony(colony, 1);
+          } else {
+            target.health--; target.hit = .16;
+            target.vx = (target.vx || 0) + Math.cos(angle) * 145; target.vy = (target.vy || 0) + Math.sin(angle) * 145;
+            if (target.health <= 0) {
+              if (targetKind === 'rival') { killGuard(target); rewardColony(colony, 1); }
+              else { burst(target.x, target.y, '#e9ad24', 20, 160); soundEnemyDown(); rewardKill(target, colony.id); }
+            }
+          }
+          burst((guard.x + target.x) / 2, (guard.y + target.y) / 2, colony.palette.accent, 10, 110); soundHit();
+        } else if (target !== state.bee && distance(guard, target) < guard.radius + target.radius + 3) {
+          guard.attackCooldown = .72; guard.health--; guard.hit = .22;
+          burst(guard.x, guard.y, colony.palette.accent, 10, 110); soundHit();
           if (guard.health <= 0) killGuard(guard);
         }
       }
     }
+
+    if (state.keys.reverse && !state.bee.landing && !state.bee.sheltered) {
+      const stinger = { x: state.bee.x - Math.cos(state.bee.angle) * 35, y: state.bee.y - Math.sin(state.bee.angle) * 35 };
+      for (const rival of state.guards) {
+        if (rival.colonyId === 0 || rival.health <= 0 || rival.sheltered || rival.lastPlayerSting === state.reverseSerial) continue;
+        if (distance(stinger, rival) >= rival.radius + 11) continue;
+        rival.lastPlayerSting = state.reverseSerial; rival.health--; rival.hit = .18;
+        burst((rival.x + state.bee.x) / 2, (rival.y + state.bee.y) / 2, '#ffd83f', 10, 110); soundHit();
+        if (rival.health <= 0) { killGuard(rival); rewardColony(state.colonies[0], 1, true); }
+      }
+    }
+
     state.guards = state.guards.filter(guard => guard.health > 0);
     if (state.guards.length !== guardsBefore) updateHud();
-    if (helperDeposits > 0) { bankNectar(helperDeposits, false); soundDeposit(); }
+    for (const [colonyId, amount] of deposits) bankColonyNectar(colonyById(colonyId), amount, false);
+    if (deposits.size) soundDeposit();
     for (const respawn of state.guardRespawns) {
       respawn.timer -= dt;
       if (respawn.timer <= 0) {
+        const colony = colonyById(respawn.colonyId ?? 0);
         const requirement = respawn.tier > 0 ? respawn.tier * 5 : 1;
-        if (state.score >= requirement) {
-          state.score--;
-          state.guards.push(makeGuard(respawn.id, respawn.tier)); burst(0, 0, '#8ee6e9', 16, 105);
-          showHint(`${respawn.tier > 0 ? 'HELPER' : 'HIVE GUARD'} RESPAWNED · 1 NECTAR`, 1.6); soundGuardReturn();
-          respawn.done = true; updateHud();
-        } else if (!respawn.notified) {
+        if (colonyBank(colony) >= requirement) {
+          setColonyBank(colony, colonyBank(colony) - 1);
+          state.guards.push(makeGuard(respawn.id, respawn.tier, colony.id)); burst(colony.x, colony.y, colony.palette.accent, 16, 105);
+          if (colony.id === 0) showHint(`${respawn.tier > 0 ? 'HELPER' : 'HIVE GUARD'} RESPAWNED · 1 NECTAR`, 1.6);
+          soundGuardReturn(); respawn.done = true; updateHud();
+        } else if (!respawn.notified && colony.id === 0) {
           const need = respawn.tier > 0 ? `${requirement} STORED NECTAR` : '1 STORED NECTAR';
           showHint(`BEE WAITING TO RESPAWN · NEED ${need}`, 2); respawn.notified = true;
         }
@@ -927,7 +1065,7 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function damageBee(fromX, fromY, points = 1) {
-    if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0 || state.bee.sheltered) return;
+    if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0 || state.bee.sheltered) return false;
     state.bee.invulnerable = 2;
     state.lives = Math.max(0, state.lives - points);
     const angle = Math.atan2(state.bee.y - fromY, state.bee.x - fromX);
@@ -935,7 +1073,8 @@ const colonyEl = document.querySelector('#colony-count');
     state.bee.nectar = Math.max(0, state.bee.nectar - 1);
     state.shake = 14; state.flash = .3;
     burst(state.bee.x, state.bee.y, '#f5b51e', 28, 200); soundHurt(); updateHud();
-    if (state.lives <= 0) {
+    const killed = state.lives <= 0;
+    if (killed) {
       if (state.score >= 1) {
         state.score--;
         state.lives = 3; state.bee = makeBee(); state.landingTarget = null; state.actionTarget = null;
@@ -945,6 +1084,7 @@ const colonyEl = document.querySelector('#colony-count');
       else gameOver();
     }
     else showHint('OUCH! YOU DROPPED SOME NECTAR', 1.7);
+    return killed;
   }
 
   function gameOver() {
@@ -981,7 +1121,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.hintTimer -= dt;
     if (state.hintTimer <= 0) hintEl.classList.remove('visible');
     state.flash = Math.max(0, state.flash - dt); state.shake *= Math.pow(.035, dt);
-    updateFlowers(dt); updateBee(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt); updateWorldMap(dt);
+    updateFlowers(dt); updateBee(dt); updateQueens(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt); updateWorldMap(dt);
   }
 
   function drawGround() {
@@ -1014,17 +1154,18 @@ const colonyEl = document.querySelector('#colony-count');
     ctx.setLineDash([38, 14]); ctx.beginPath(); ctx.arc(0, 0, edge + 40, 0, TAU); ctx.stroke(); ctx.restore();
   }
 
-  function drawHive() {
-    const p = worldToScreen({ x: 0, y: 0 });
+  function drawHive(hive) {
+    const p = worldToScreen(hive);
     if (p.x < -160 || p.x > state.width + 160 || p.y < -160 || p.y > state.height + 160) return;
     ctx.save(); ctx.translate(p.x, p.y);
     ctx.fillStyle = 'rgba(38,70,28,.18)'; ctx.beginPath(); ctx.ellipse(0, 20, 112, 76, 0, 0, TAU); ctx.fill();
     ctx.strokeStyle = '#70500e'; ctx.lineWidth = 11; ctx.beginPath(); ctx.moveTo(0, -78); ctx.lineTo(0, -110); ctx.stroke();
-    ctx.fillStyle = '#d89117'; ctx.strokeStyle = '#79510c'; ctx.lineWidth = 5;
+    ctx.fillStyle = hive.palette.hive; ctx.strokeStyle = hive.palette.hiveDark; ctx.lineWidth = 5;
     const tiers = [[-70, 70], [-55, 88], [-35, 100], [-12, 106], [13, 100], [35, 86], [55, 66]];
     for (const [y, width] of tiers) { ctx.beginPath(); ctx.roundRect(-width, y - 13, width * 2, 27, 13); ctx.fill(); ctx.stroke(); }
     ctx.fillStyle = '#39250d'; ctx.beginPath(); ctx.ellipse(0, 50, 26, 20, 0, Math.PI, TAU); ctx.fill();
-    ctx.fillStyle = '#ffc927'; ctx.font = '800 13px "Nunito"'; ctx.textAlign = 'center'; ctx.fillText('HOME', 0, 91);
+    ctx.fillStyle = hive.palette.accent; ctx.font = '800 13px "Nunito"'; ctx.textAlign = 'center';
+    ctx.fillText(hive.id === 0 ? 'HOME' : `HIVE ${hive.id + 1}`, 0, 91);
     ctx.restore();
   }
 
@@ -1032,16 +1173,39 @@ const colonyEl = document.querySelector('#colony-count');
     if (!onScreen(obstacle, obstacle.radius + 40)) return;
     const p = worldToScreen(obstacle);
     ctx.save(); ctx.translate(p.x, p.y);
-    ctx.fillStyle = 'rgba(38,70,28,.2)';
-    ctx.beginPath(); ctx.ellipse(0, obstacle.radius * .34, obstacle.radius * .95, obstacle.radius * .45, 0, 0, TAU); ctx.fill();
+    const r = obstacle.radius;
+    const shadow = ctx.createRadialGradient(r * .18, r * .38, 2, r * .18, r * .38, r * 1.15);
+    shadow.addColorStop(0, 'rgba(24,53,22,.34)'); shadow.addColorStop(1, 'rgba(24,53,22,0)');
+    ctx.fillStyle = shadow; ctx.beginPath(); ctx.ellipse(r * .16, r * .38, r * 1.15, r * .53, 0, 0, TAU); ctx.fill();
     if (obstacle.kind === 'tree') {
-      ctx.fillStyle = '#6f4a20';
-      ctx.beginPath(); ctx.roundRect(-obstacle.radius * .14, -obstacle.radius * .1, obstacle.radius * .28, obstacle.radius * .8, 5); ctx.fill();
+      const trunk = ctx.createLinearGradient(-r * .15, 0, r * .18, 0);
+      trunk.addColorStop(0, '#3d2815'); trunk.addColorStop(.42, '#8a5b2b'); trunk.addColorStop(.68, '#a77438'); trunk.addColorStop(1, '#422a16');
+      ctx.fillStyle = trunk; ctx.strokeStyle = '#3b2817'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.roundRect(-r * .15, -r * .2, r * .3, r * .92, 5); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = 'rgba(49,29,13,.38)'; ctx.lineWidth = 1.4;
+      for (let y = -.08; y < .58; y += .18) { ctx.beginPath(); ctx.moveTo(-r * .1, r * y); ctx.lineTo(r * .1, r * (y + .07)); ctx.stroke(); }
     }
     const sway = Math.sin(state.elapsed * .7 + obstacle.sway) * 3;
-    ctx.fillStyle = obstacle.kind === 'tree' ? '#2f7a3a' : '#57a552';
-    ctx.strokeStyle = 'rgba(30,60,26,.35)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(sway, -obstacle.radius * .62, obstacle.radius * .8, 0, TAU); ctx.fill(); ctx.stroke();
+    const lobes = obstacle.kind === 'tree'
+      ? [[0,-.78,.68],[-.48,-.61,.48],[.5,-.58,.48],[-.2,-1.08,.45],[.28,-1.03,.42]]
+      : [[0,-.35,.67],[-.5,-.22,.48],[.5,-.2,.5],[-.25,-.62,.44],[.28,-.58,.46]];
+    for (let i = 0; i < lobes.length; i++) {
+      const [lx, ly, lr] = lobes[i], x = sway + lx * r, y = ly * r, radius = lr * r;
+      const leaf = ctx.createRadialGradient(x - radius * .34, y - radius * .42, radius * .08, x, y, radius);
+      if (obstacle.kind === 'tree') {
+        leaf.addColorStop(0, i % 2 ? '#83c766' : '#9bd675'); leaf.addColorStop(.44, '#3d9147'); leaf.addColorStop(1, '#195c31');
+      } else {
+        leaf.addColorStop(0, i % 2 ? '#b2df7c' : '#d0eb93'); leaf.addColorStop(.46, '#63ad52'); leaf.addColorStop(1, '#2d753d');
+      }
+      ctx.fillStyle = leaf; ctx.strokeStyle = 'rgba(26,69,32,.48)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, radius, 0, TAU); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,210,.2)'; ctx.beginPath(); ctx.ellipse(x - radius * .28, y - radius * .34, radius * .2, radius * .09, -.55, 0, TAU); ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(15,65,31,.34)';
+    for (let i = 0; i < 7; i++) {
+      const a = obstacle.sway * 2.3 + i * 2.399, rr = r * (.18 + (i % 3) * .12);
+      ctx.beginPath(); ctx.arc(sway + Math.cos(a) * rr, -r * .54 + Math.sin(a) * rr * .72, 1.5 + i % 2, 0, TAU); ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -1093,20 +1257,45 @@ const colonyEl = document.querySelector('#colony-count');
 
   function drawGuard(guard) {
     if (!onScreen(guard, 45)) return;
-    const p = worldToScreen(guard);
-    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(guard.angle + Math.PI / 2); ctx.scale(.82, .82);
+    const p = worldToScreen(guard), palette = colonyById(guard.colonyId).palette;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(guard.angle + Math.PI / 2); ctx.scale(.82 * guard.landScale, .82 * guard.landScale);
     const flap = Math.sin(guard.wing) * .4;
     ctx.fillStyle = 'rgba(222,249,247,.76)'; ctx.strokeStyle = 'rgba(38,92,92,.5)'; ctx.lineWidth = 1.5;
     ctx.save(); ctx.rotate(-.55 - flap); ctx.beginPath(); ctx.ellipse(-15, -1, 10, 20, -.4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
     ctx.save(); ctx.rotate(.55 + flap); ctx.beginPath(); ctx.ellipse(15, -1, 10, 20, .4, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
-    ctx.fillStyle = guard.hit ? '#fff' : '#eeb51d'; ctx.strokeStyle = '#26332d'; ctx.lineWidth = 3;
+    ctx.fillStyle = guard.hit ? '#fff' : palette.body; ctx.strokeStyle = palette.dark; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.ellipse(0, 5, 13, 21, 0, 0, TAU); ctx.fill(); ctx.stroke();
-    ctx.strokeStyle = '#247887'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-11, 1); ctx.lineTo(11, 1); ctx.moveTo(-11, 11); ctx.lineTo(11, 11); ctx.stroke();
-    ctx.fillStyle = '#26332d'; ctx.beginPath(); ctx.arc(0, -13, 11, 0, TAU); ctx.fill();
-    ctx.fillStyle = '#7fe3ea'; ctx.beginPath(); ctx.arc(0, -14, 4, 0, TAU); ctx.fill();
+    ctx.strokeStyle = palette.stripe; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(-11, 1); ctx.lineTo(11, 1); ctx.moveTo(-11, 11); ctx.lineTo(11, 11); ctx.stroke();
+    ctx.fillStyle = palette.dark; ctx.beginPath(); ctx.arc(0, -13, 11, 0, TAU); ctx.fill();
+    ctx.fillStyle = palette.accent; ctx.beginPath(); ctx.arc(0, -14, 4, 0, TAU); ctx.fill();
+    const stingLength = 31 + guard.stingAnim * (13 + Math.sin(state.elapsed * 28 + guard.id) * 2);
+    ctx.fillStyle = palette.dark; ctx.beginPath(); ctx.moveTo(-4, 25); ctx.lineTo(0, stingLength); ctx.lineTo(4, 25); ctx.closePath(); ctx.fill();
+    if (guard.stingAnim > .2) {
+      ctx.globalAlpha = guard.stingAnim * .7; ctx.strokeStyle = palette.accent; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 5, 28 + Math.sin(state.elapsed * 30 + guard.id) * 2, 0, TAU); ctx.stroke(); ctx.globalAlpha = 1;
+    }
     ctx.restore();
     ctx.save(); ctx.translate(p.x, p.y - 27); ctx.fillStyle = 'rgba(25,53,44,.35)'; ctx.fillRect(-14, 0, 28, 3);
-    ctx.fillStyle = '#82e1e6'; ctx.fillRect(-14, 0, 28 * guard.health / guard.maxHealth, 3); ctx.restore();
+    ctx.fillStyle = palette.accent; ctx.fillRect(-14, 0, 28 * guard.health / guard.maxHealth, 3); ctx.restore();
+  }
+
+  function drawQueen(queen) {
+    if (!onScreen(queen, 70)) return;
+    const p = worldToScreen(queen), palette = queen.palette;
+    ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(queen.angle + Math.PI / 2); ctx.scale(1.15, 1.15);
+    const flap = Math.sin(queen.wing) * .38;
+    ctx.fillStyle = 'rgba(237,252,250,.76)'; ctx.strokeStyle = 'rgba(57,91,78,.5)'; ctx.lineWidth = 1.5;
+    ctx.save(); ctx.rotate(-.55 - flap); ctx.beginPath(); ctx.ellipse(-18, 0, 13, 27, -.45, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.rotate(.55 + flap); ctx.beginPath(); ctx.ellipse(18, 0, 13, 27, .45, 0, TAU); ctx.fill(); ctx.stroke(); ctx.restore();
+    ctx.fillStyle = palette.body; ctx.strokeStyle = palette.dark; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.ellipse(0, 9, 15, 29, 0, 0, TAU); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = palette.stripe; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(-13, 3); ctx.lineTo(13, 3); ctx.moveTo(-12, 16); ctx.lineTo(12, 16); ctx.stroke();
+    ctx.fillStyle = palette.dark; ctx.beginPath(); ctx.arc(0, -16, 12, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#ffe56b'; ctx.strokeStyle = '#8b6513'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(-9, -25); ctx.lineTo(-6, -36); ctx.lineTo(0, -28); ctx.lineTo(6, -36); ctx.lineTo(9, -25); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.save(); ctx.translate(p.x, p.y - 42); ctx.fillStyle = 'rgba(37,45,28,.72)'; ctx.beginPath(); ctx.roundRect(-28, -9, 56, 18, 8); ctx.fill();
+    ctx.fillStyle = '#fff4a6'; ctx.font = '800 9px "Nunito"'; ctx.textAlign = 'center'; ctx.fillText('QUEEN', 0, 3); ctx.restore();
   }
 
   function drawWasp(wasp) {
@@ -1182,6 +1371,7 @@ const colonyEl = document.querySelector('#colony-count');
 
   function drawMarkers() {
     drawHomePointer();
+    for (const hive of state.hives) if (hive.id !== 0) drawCompassMarker(hive, hive.palette.accent, `RIVAL ${hive.id + 1}`);
     if (state.bee.nectar < TUNING.balance.nectarCapacity) {
       const flowers = state.flowers.filter(f => !f.spent).sort((a, b) => distance(state.bee, a) - distance(state.bee, b));
       for (const flower of flowers.slice(0, 2)) drawCompassMarker(flower, flower.type.petal, 'FLOWER');
@@ -1198,10 +1388,11 @@ const colonyEl = document.querySelector('#colony-count');
     for (const web of state.webs) drawWeb(web);
     for (const flower of state.flowers) drawFlower(flower);
     for (const obstacle of state.obstacles) drawObstacle(obstacle);
-    drawHive();
+    for (const hive of state.hives) drawHive(hive);
     for (const spider of state.spiders) drawSpider(spider);
     for (const wasp of state.wasps) drawWasp(wasp);
     for (const dragon of state.dragonflies) drawDragonfly(dragon);
+    for (const queen of state.queens) drawQueen(queen);
     for (const guard of state.guards) drawGuard(guard);
     drawParticles();
     if (state.bee) drawBee(state.bee);
@@ -1322,6 +1513,10 @@ const colonyEl = document.querySelector('#colony-count');
   if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 
   resize(); beginDemo();
-  window.__BEE_DEBUG__ = { state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, spawnWasp, spawnDragonfly, nextDay, landingCandidate, update, TUNING };
+  window.__BEE_DEBUG__ = {
+    state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, bankColonyNectar,
+    rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, nextDay,
+    landingCandidate, update, TUNING
+  };
   requestAnimationFrame(frame);
 })();

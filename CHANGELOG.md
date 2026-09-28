@@ -5,6 +5,32 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.0] - 2026-09-28
+
+### Added
+
+- A stored 100-nectar bank now launches a queen, consumes the 100 nectar, and
+  sends her to a distant unexplored site to found a persistent rival hive.
+- Every descendant hive runs the complete colony economy: two founding bees,
+  flower gathering, one helper per five gathered nectar, paid respawns, and its
+  own recursive 100-nectar queen launches.
+- Each colony receives a distinct bee, health-bar, particle, marker, and hive
+  palette so competing swarms remain readable.
+- Rival bees now fight with rear stingers. A confirmed bee kill gives one
+  spendable nectar to the victorious hive without growing its helper milestone.
+- Helper bees now visibly extend and pulse their stingers while reversing into
+  predators or rival bees.
+
+### Changed
+
+- Trees and shrubs now use layered radial lighting, canopy lobes, bark shading,
+  contact shadows, highlights, and surface texture for a bump-mapped look.
+- Predator health scales gradually with the combined lifetime nectar of every
+  colony: wasps gain one HP per 25, spiders per 35, and dragonflies per 50.
+- Spider webs grow after every confirmed spider kill, including a player kill,
+  and empty webs despawn when their owner is gone.
+- The playable meadow radius has increased to support distant rival colonies.
+
 ## [0.11.0] - 2026-09-28
 
 ### Changed
