@@ -50,7 +50,7 @@ const colonyEl = document.querySelector('#colony-count');
     flowers: [], webs: [], spiders: [], wasps: [], dragonflies: [], guards: [], guardRespawns: [], helperTiersSpawned: [], particles: [],
     obstacles: [], worldMap: { cell: 500, cells: {} }, mapTimer: 0,
     colonies: [], hives: [], queens: [], nextColonyId: 1,
-    camera: { x: 0, y: 0, vx: 0, vy: 0 },
+    camera: { x: 0, y: 0, vx: 0, vy: 0, zoom: 1, targetZoom: 1 },
     keys: { left: false, right: false, thrust: false, reverse: false, land: false },
     joystick: { active: false, pointerId: null, angle: 0, magnitude: 0 },
     waspTimer: 7, dragonflyTimer: 16, hintTimer: 0, reverseSerial: 0,
@@ -63,9 +63,15 @@ const colonyEl = document.querySelector('#colony-count');
   const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
   const angleDelta = (a, b) => Math.atan2(Math.sin(b - a), Math.cos(b - a));
   const worldToScreen = obj => ({ x: obj.x - state.camera.x, y: obj.y - state.camera.y });
+  const worldToViewport = obj => {
+    const p = worldToScreen(obj), zoom = state.camera.zoom;
+    return { x: state.width / 2 + (p.x - state.width / 2) * zoom, y: state.height / 2 + (p.y - state.height / 2) * zoom };
+  };
   const onScreen = (obj, margin = 80) => {
     const p = worldToScreen(obj);
-    return p.x > -margin && p.x < state.width + margin && p.y > -margin && p.y < state.height + margin;
+    const zoom = state.camera.zoom, halfW = state.width / 2, halfH = state.height / 2;
+    return p.x > halfW - (halfW + margin) / zoom && p.x < halfW + (halfW + margin) / zoom
+      && p.y > halfH - (halfH + margin) / zoom && p.y < halfH + (halfH + margin) / zoom;
   };
   const hash = (x, y) => {
     const value = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
@@ -305,6 +311,7 @@ const colonyEl = document.querySelector('#colony-count');
     state.colonies = [makeColony(0, 0, 0)]; state.hives = [state.colonies[0]]; state.queens = []; state.nextColonyId = 1;
     state.guards = [makeGuard(0, 0, 0), makeGuard(1, 0, 0)]; state.guardRespawns = []; state.helperTiersSpawned = [];
     state.bee = makeBee(); state.actionTarget = null; state.landingTarget = null; state.actionTime = 0; state.reverseSerial = 0;
+    state.camera.zoom = 1; state.camera.targetZoom = 1;
     state.waspTimer = random(7, 11) / TUNING.balance.enemies;
     state.dragonflyTimer = random(16, 23) / TUNING.balance.enemies;
     populateMeadow(); centerCamera();
@@ -388,6 +395,7 @@ const colonyEl = document.querySelector('#colony-count');
 
   function rewardColony(colony, amount, announce = false) {
     setColonyBank(colony, colonyBank(colony) + amount);
+    spawnUnlockedHelpers(colony);
     if (announce && colony.id === 0) showHint(`+${amount} NECTAR`, .8);
     maybeLaunchQueen(colony);
     updateHud();
@@ -497,10 +505,24 @@ const colonyEl = document.querySelector('#colony-count');
     return 0;
   }
 
+  function setZoom(value, announce = false) {
+    state.camera.targetZoom = clamp(value, .68, 1.6);
+    if (announce) showHint(`ZOOM ${Math.round(state.camera.targetZoom * 100)}%`, .8);
+    return state.camera.targetZoom;
+  }
+
   function updateCamera(dt) {
     const bee = state.bee;
-    const screenX = bee.x - state.camera.x;
-    const screenY = bee.y - state.camera.y;
+    const oldZoom = state.camera.zoom;
+    const nextZoom = oldZoom + (state.camera.targetZoom - oldZoom) * (1 - Math.exp(-11 * dt));
+    if (Math.abs(nextZoom - oldZoom) > .00001) {
+      const centerX = state.camera.x + state.width / 2, centerY = state.camera.y + state.height / 2;
+      state.camera.x = bee.x - (bee.x - centerX) * oldZoom / nextZoom - state.width / 2;
+      state.camera.y = bee.y - (bee.y - centerY) * oldZoom / nextZoom - state.height / 2;
+      state.camera.zoom = nextZoom;
+    }
+    const viewport = worldToViewport(bee);
+    const screenX = viewport.x, screenY = viewport.y;
     const insetX = clamp(state.width * .14, 76, 142);
     const insetY = clamp(state.height * .15, 68, 118);
     const zoneX = clamp(state.width * .35, 130, 330);
@@ -516,12 +538,11 @@ const colonyEl = document.querySelector('#colony-count');
     state.camera.x += state.camera.vx * dt;
     state.camera.y += state.camera.vy * dt;
 
-    const sx = bee.x - state.camera.x;
-    const sy = bee.y - state.camera.y;
-    if (sx < insetX) state.camera.x = bee.x - insetX;
-    if (sx > state.width - insetX) state.camera.x = bee.x - (state.width - insetX);
-    if (sy < insetY) state.camera.y = bee.y - insetY;
-    if (sy > state.height - insetY) state.camera.y = bee.y - (state.height - insetY);
+    const position = worldToViewport(bee), zoom = state.camera.zoom;
+    if (position.x < insetX) state.camera.x += (position.x - insetX) / zoom;
+    if (position.x > state.width - insetX) state.camera.x += (position.x - (state.width - insetX)) / zoom;
+    if (position.y < insetY) state.camera.y += (position.y - insetY) / zoom;
+    if (position.y > state.height - insetY) state.camera.y += (position.y - (state.height - insetY)) / zoom;
   }
 
   function updateBee(dt) {
@@ -1140,15 +1161,20 @@ const colonyEl = document.querySelector('#colony-count');
     updateFlowers(dt); updateBee(dt); updateQueens(dt); updateEnemies(dt); updateGuards(dt); updateParticles(dt); updateWorldMap(dt);
   }
 
-  function drawGround() {
+  function drawGroundBase() {
     const gradient = ctx.createLinearGradient(0, 0, 0, state.height);
     gradient.addColorStop(0, '#67ad55'); gradient.addColorStop(1, '#4d9648');
     ctx.fillStyle = gradient; ctx.fillRect(0, 0, state.width, state.height);
+  }
+
+  function drawGround() {
     const cell = 74;
-    const minX = Math.floor(state.camera.x / cell) - 1;
-    const maxX = Math.ceil((state.camera.x + state.width) / cell) + 1;
-    const minY = Math.floor(state.camera.y / cell) - 1;
-    const maxY = Math.ceil((state.camera.y + state.height) / cell) + 1;
+    const halfWorldWidth = state.width / (2 * state.camera.zoom), halfWorldHeight = state.height / (2 * state.camera.zoom);
+    const centerX = state.camera.x + state.width / 2, centerY = state.camera.y + state.height / 2;
+    const minX = Math.floor((centerX - halfWorldWidth) / cell) - 1;
+    const maxX = Math.ceil((centerX + halfWorldWidth) / cell) + 1;
+    const minY = Math.floor((centerY - halfWorldHeight) / cell) - 1;
+    const maxY = Math.ceil((centerY + halfWorldHeight) / cell) + 1;
     ctx.lineCap = 'round';
     for (let gx = minX; gx <= maxX; gx++) {
       for (let gy = minY; gy <= maxY; gy++) {
@@ -1363,7 +1389,7 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function drawCompassMarker(target, color, symbol) {
-    const p = worldToScreen(target), pad = 64;
+    const p = worldToViewport(target), pad = 64;
     if (p.x > pad && p.x < state.width - pad && p.y > pad && p.y < state.height - pad) return;
     const cx = state.width / 2, cy = state.height / 2;
     const angle = Math.atan2(p.y - cy, p.x - cx);
@@ -1373,7 +1399,7 @@ const colonyEl = document.querySelector('#colony-count');
   }
 
   function drawHomePointer() {
-    const hive = { x: 0, y: 0 }, p = worldToScreen(hive), pad = 86;
+    const hive = { x: 0, y: 0 }, p = worldToViewport(hive), pad = 86;
     if (p.x > 80 && p.x < state.width - 80 && p.y > 110 && p.y < state.height - 80) return;
     const cx = state.width / 2, cy = state.height / 2;
     const angle = Math.atan2(p.y - cy, p.x - cx);
@@ -1403,6 +1429,11 @@ const colonyEl = document.querySelector('#colony-count');
     const shakeX = state.shake ? random(-state.shake, state.shake) : 0;
     const shakeY = state.shake ? random(-state.shake, state.shake) : 0;
     ctx.translate(shakeX, shakeY);
+    drawGroundBase();
+    ctx.save();
+    ctx.translate(state.width / 2, state.height / 2);
+    ctx.scale(state.camera.zoom, state.camera.zoom);
+    ctx.translate(-state.width / 2, -state.height / 2);
     drawGround();
     for (const web of state.webs) drawWeb(web);
     for (const flower of state.flowers) drawFlower(flower);
@@ -1415,6 +1446,7 @@ const colonyEl = document.querySelector('#colony-count');
     for (const guard of state.guards) drawGuard(guard);
     drawParticles();
     if (state.bee) drawBee(state.bee);
+    ctx.restore();
     if (state.running || state.demo) drawMarkers();
     ctx.restore();
     if (state.flash > 0) { ctx.fillStyle = `rgba(255,244,198,${state.flash})`; ctx.fillRect(0, 0, state.width, state.height); }
@@ -1506,6 +1538,8 @@ const colonyEl = document.querySelector('#colony-count');
   addEventListener('keydown', event => {
     if (keyMap[event.key]) { state.keys[keyMap[event.key]] = true; event.preventDefault(); unlockAudio(); }
     if (event.key === ' ' && !event.repeat) { event.preventDefault(); unlockAudio(); toggleLandingMode(); }
+    if (!event.repeat && (event.key === '+' || event.key === '=' || event.code === 'NumpadAdd')) { event.preventDefault(); setZoom(state.camera.targetZoom + .12, true); }
+    if (!event.repeat && (event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract')) { event.preventDefault(); setZoom(state.camera.targetZoom - .12, true); }
     if ((event.key === 'p' || event.key === 'P' || event.key === 'Escape') && !event.repeat) togglePause();
     if (event.key === 'Enter' && !state.running) beginGame();
   });
@@ -1546,6 +1580,35 @@ const colonyEl = document.querySelector('#colony-count');
     moveJoystick.addEventListener('lostpointercapture', event => resetJoystick(event.pointerId));
   }
 
+  const pinchPointers = new Map();
+  let pinchStartDistance = 0, pinchStartZoom = 1;
+  const pinchDistance = () => {
+    const points = [...pinchPointers.values()];
+    return points.length < 2 ? 0 : Math.hypot(points[0].x - points[1].x, points[0].y - points[1].y);
+  };
+  canvas.addEventListener('pointerdown', event => {
+    if (event.pointerType !== 'touch' || !state.running || state.paused) return;
+    pinchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    canvas.setPointerCapture(event.pointerId);
+    if (pinchPointers.size === 2) { pinchStartDistance = pinchDistance(); pinchStartZoom = state.camera.targetZoom; }
+  });
+  canvas.addEventListener('pointermove', event => {
+    if (!pinchPointers.has(event.pointerId)) return;
+    pinchPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchPointers.size === 2 && pinchStartDistance > 10) {
+      event.preventDefault(); setZoom(pinchStartZoom * pinchDistance() / pinchStartDistance);
+    }
+  });
+  const endPinch = event => {
+    if (!pinchPointers.has(event.pointerId)) return;
+    pinchPointers.delete(event.pointerId);
+    if (pinchStartDistance > 0) showHint(`ZOOM ${Math.round(state.camera.targetZoom * 100)}%`, .7);
+    pinchStartDistance = 0;
+  };
+  canvas.addEventListener('pointerup', endPinch);
+  canvas.addEventListener('pointercancel', endPinch);
+  canvas.addEventListener('lostpointercapture', endPinch);
+
   for (const button of document.querySelectorAll('[data-control]')) {
     const control = button.dataset.control;
     const set = active => { state.keys[control] = active; button.classList.toggle('active', active); if (active) unlockAudio(); };
@@ -1568,7 +1631,7 @@ const colonyEl = document.querySelector('#colony-count');
   resize(); beginDemo();
   window.__BEE_DEBUG__ = {
     state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, bankColonyNectar,
-    rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, waspAttackDamage, nextDay,
+    rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, waspAttackDamage, setZoom, nextDay,
     landingCandidate, update, TUNING
   };
   requestAnimationFrame(frame);

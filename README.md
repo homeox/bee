@@ -29,7 +29,9 @@ Opening `index.html` directly also works, except PWA installation requires a web
 - Reverse/attack: Arrow Down or S (a short burst is faster than forward flight)
 - Land/gather/unload: Space (press once near a flower or the hive to land, then press again to launch)
 - Pause: P or Escape
+- Zoom: + / -
 - Mobile: analog movement joystick plus held ATTACK/reverse and toggle LAND buttons
+- Mobile zoom: pinch two fingers on the meadow
 
 ## Developer launch controls
 
