@@ -9,6 +9,7 @@ const versionEl = document.querySelector('#version');
 const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0';
   const livesEl = document.querySelector('#lives');
   const dayEl = document.querySelector('#day');
+const colonyEl = document.querySelector('#colony-count');
   const hintEl = document.querySelector('#hint');
   const progressEl = document.querySelector('#action-progress');
   const progressFill = progressEl.querySelector('i');
@@ -236,7 +237,8 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
     livesEl.textContent = '♥'.repeat(state.lives);
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
     const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
-    dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal} · BEES ${state.guards.length}/${availableHelpers}`;
+    dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
+    if (colonyEl) colonyEl.textContent = `${state.guards.length + 1}/${availableHelpers + 1}`;
   }
 
   function spawnUnlockedHelpers() {
@@ -625,6 +627,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
   function updateGuards(dt) {
     const enemies = [...state.wasps, ...state.dragonflies, ...state.spiders].filter(enemy => enemy.health > 0);
     let helperDeposits = 0;
+    const guardsBefore = state.guards.length;
     const roster = [...state.guards].sort((a, b) => a.id - b.id);
     const foragerId = roster.length >= 2 ? roster[0].id : null;
     const hiveGuardId = roster.length >= 2 ? roster[1].id : null;
@@ -695,6 +698,7 @@ const BEE_VERSION = (typeof self !== 'undefined' && self.BEE_VERSION) || '0.1.0'
       }
     }
     state.guards = state.guards.filter(guard => guard.health > 0);
+    if (state.guards.length !== guardsBefore) updateHud();
     if (helperDeposits > 0) { bankNectar(helperDeposits, false); soundDeposit(); }
     for (const respawn of state.guardRespawns) {
       respawn.timer -= dt;

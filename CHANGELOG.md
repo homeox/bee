@@ -5,6 +5,19 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-28
+
+### Added
+
+- A dedicated COLONY counter in the status row showing live bees over the
+  colony's maximum (`alive/total`), including the player. It drops when a
+  helper dies and recovers when one respawns.
+
+### Changed
+
+- The bee count moved out of the day line (`DAY 01 · GOAL 0/6`) into the new
+  COLONY counter.
+
 ## [0.3.0] - 2026-09-28
 
 ### Added
