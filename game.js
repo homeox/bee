@@ -165,11 +165,12 @@ const colonyEl = document.querySelector('#colony-count');
   function spawnDragonfly() {
     if (!TUNING.features.dragonflies || !state.bee) return null;
     const angle = random(0, TAU);
-    const radius = random(700, 950);
+    const radius = random(900, 1300);
     const dragonfly = {
       x: state.bee.x + Math.cos(angle) * radius, y: state.bee.y + Math.sin(angle) * radius,
       vx: -Math.cos(angle) * 220, vy: -Math.sin(angle) * 220, angle: angle + Math.PI,
-      radius: 25, health: 2, maxHealth: 2, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1
+      radius: 25, health: 2, maxHealth: 2, phase: random(0, TAU), swoop: random(1.8, 3.2), hit: 0, lastSting: -1,
+      sated: false, leaving: 0, gone: false
     };
     state.dragonflies.push(dragonfly);
     showHint('⚠ DRAGONFLY SWOOP', 2.4);
@@ -248,7 +249,7 @@ const colonyEl = document.querySelector('#colony-count');
     const capacity = TUNING.balance.nectarCapacity;
     nectarEl.textContent = Array.from({ length: capacity }, (_, i) => i < (state.bee?.nectar || 0) ? '●' : '○').join(' ');
   if (versionEl) versionEl.textContent = 'v' + BEE_VERSION;
-    livesEl.textContent = '♥'.repeat(state.lives);
+    livesEl.textContent = '♥'.repeat(Math.max(0, state.lives));
     livesEl.setAttribute('aria-label', `${state.lives} lives`);
     const availableHelpers = 2 + Math.floor(state.totalNectar / 5);
     dayEl.textContent = `DAY ${String(state.day).padStart(2, '0')} · GOAL ${state.dayNectar}/${state.dayGoal}`;
@@ -573,7 +574,7 @@ const colonyEl = document.querySelector('#colony-count');
     const maxDragonflies = Math.min(4, Math.floor(nectar / TUNING.balance.dragonflyNectarStep));
     if (state.dragonflyTimer <= 0 && state.dragonflies.length < maxDragonflies) {
       spawnDragonfly();
-      state.dragonflyTimer = random(18, 28) / (TUNING.balance.enemies * (1 + nectar * .02));
+      state.dragonflyTimer = random(12, 30) / (TUNING.balance.enemies * (1 + nectar * .04));
     }
 
     const chaseables = [];
@@ -607,15 +608,28 @@ const colonyEl = document.querySelector('#colony-count');
     for (const dragon of state.dragonflies) {
       dragon.hit = Math.max(0, dragon.hit - dt);
       dragon.phase += dt * 18;
-      dragon.swoop -= dt;
       const dragonWeb = tangledInWeb(dragon);
       dragon.tangled = Boolean(dragonWeb);
-      const dragonTarget = nearestChaseable(dragon);
-      if (dragon.swoop <= 0 && dragonTarget && !dragonWeb) {
+      const dragonTarget = nearestChaseable(dragon) || { x: 0, y: 0 };
+
+      if (dragon.sated) {
+        const away = Math.atan2(dragon.y - dragonTarget.y, dragon.x - dragonTarget.x);
+        dragon.vx += Math.cos(away) * 520 * dt;
+        dragon.vy += Math.sin(away) * 520 * dt;
+        dragon.vx *= Math.pow(.5, dt); dragon.vy *= Math.pow(.5, dt);
+        dragon.angle = Math.atan2(dragon.vy, dragon.vx);
+        dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
+        dragon.leaving += dt;
+        if (distance(dragon, dragonTarget) > 1400 || dragon.leaving > 6) dragon.gone = true;
+        continue;
+      }
+
+      dragon.swoop -= dt;
+      if (dragon.swoop <= 0 && !dragonWeb) {
         const aim = Math.atan2(dragonTarget.y - dragon.y, dragonTarget.x - dragon.x);
-        dragon.vx = Math.cos(aim) * (360 + state.day * 4);
-        dragon.vy = Math.sin(aim) * (360 + state.day * 4);
-        dragon.swoop = random(2.5, 4.1);
+        dragon.vx = Math.cos(aim) * (400 + state.day * 4);
+        dragon.vy = Math.sin(aim) * (400 + state.day * 4);
+        dragon.swoop = random(2.2, 3.6);
         soundSwoop();
       } else if (dragonWeb) {
         webWiggle(dragon, dragonWeb, dt, dragon.phase, .06);
@@ -624,8 +638,24 @@ const colonyEl = document.querySelector('#colony-count');
       }
       dragon.angle = Math.atan2(dragon.vy, dragon.vx);
       dragon.x += dragon.vx * dt; dragon.y += dragon.vy * dt;
-      resolveEnemyContact(dragon, state.dragonflies, 2);
-      if (dragonTarget && !dragonWeb && distance(dragon, dragonTarget) > 1500) {
+
+      let ate = false;
+      if (!dragonWeb) {
+        const bitePossible = state.bee.invulnerable <= 0 && !state.bee.sheltered && Boolean(TUNING.balance.playerDamage);
+        resolveEnemyContact(dragon, state.dragonflies, 99);
+        ate = bitePossible && state.bee.invulnerable > 0;
+        if (!ate) {
+          for (const guard of state.guards) {
+            if (guard.health > 0 && distance(dragon, guard) < dragon.radius + guard.radius + 2) {
+              guard.health = 0; killGuard(guard); ate = true; break;
+            }
+          }
+        }
+      }
+      if (ate) {
+        dragon.sated = true;
+        burst(dragon.x, dragon.y, '#d94b31', 24, 170); soundEnemyDown();
+      } else if (!dragonWeb && distance(dragon, dragonTarget) > 1500) {
         const angle = random(0, TAU);
         dragon.x = dragonTarget.x + Math.cos(angle) * 820; dragon.y = dragonTarget.y + Math.sin(angle) * 820;
       }
@@ -682,7 +712,7 @@ const colonyEl = document.querySelector('#colony-count');
       resolveEnemyContact(spider, state.spiders, 1);
     }
     state.wasps = state.wasps.filter(enemy => enemy.health > 0);
-    state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0);
+    state.dragonflies = state.dragonflies.filter(enemy => enemy.health > 0 && !enemy.gone);
     state.spiders = state.spiders.filter(enemy => enemy.health > 0);
   }
 
@@ -803,7 +833,7 @@ const colonyEl = document.querySelector('#colony-count');
   function damageBee(fromX, fromY, points = 1) {
     if (!TUNING.balance.playerDamage || state.bee.invulnerable > 0 || state.bee.sheltered) return;
     state.bee.invulnerable = 2;
-    state.lives -= points;
+    state.lives = Math.max(0, state.lives - points);
     const angle = Math.atan2(state.bee.y - fromY, state.bee.x - fromX);
     state.bee.vx = Math.cos(angle) * 230; state.bee.vy = Math.sin(angle) * 230;
     state.bee.nectar = Math.max(0, state.bee.nectar - 1);

@@ -5,6 +5,25 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-09-28
+
+### Changed
+
+- Dragonflies are now ambush predators rather than another chasing insect. The
+  dive is lethal: one hit takes a bee outright, player or helper, so a lone bee
+  cannot trade with one and it takes numbers to bring it down. They enter from
+  off-screen at 900-1300px out and close at 400+ px/s.
+- A fed dragonfly leaves. After eating it peels away and despawns off-screen
+  rather than lingering, and there is no fixed cooldown before the next one:
+  arrivals are random and grow more frequent as the colony banks nectar, gated
+  by a nectar-scaled population cap.
+
+### Fixed
+
+- Damage is clamped at zero lives. A lethal 99-point bite used to drive lives
+  negative, and the HUD's `'♥'.repeat(lives)` then threw a RangeError that
+  crashed the entire game loop.
+
 ## [0.6.0] - 2026-09-28
 
 ### Added
