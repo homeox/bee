@@ -5,6 +5,16 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-28
+
+### Fixed
+
+- Helper bees are now caught by webs too, completing the "everything but
+  spiders" rule. A flying helper that enters a web loses steering and its speed
+  collapses until it works free; a helper already settled on a flower or the
+  hive is unaffected. Helpers also no longer choose flowers that sit inside a
+  web, so a snared forager cannot get stuck circling an unreachable target.
+
 ## [0.5.0] - 2026-09-28
 
 ### Added

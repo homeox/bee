@@ -686,7 +686,7 @@ const colonyEl = document.querySelector('#colony-count');
           : Boolean(guard.forageTarget) || Math.sin(state.elapsed * .32 + guard.id * 1.7) > -.15;
         if (guard.forageTarget && (guard.forageTarget.spent || guard.forageTarget.nectar <= 0)) guard.forageTarget = null;
         if (shouldForage && !guard.forageTarget) {
-          const flowers = state.flowers.filter(flower => !flower.spent && flower.nectar > 0);
+          const flowers = state.flowers.filter(flower => !flower.spent && flower.nectar > 0 && !tangledInWeb(flower));
           guard.forageTarget = flowers.sort((a, b) => distance(guard, a) - distance(guard, b))[0] || null;
         }
         if (shouldForage && guard.forageTarget) {
@@ -701,6 +701,8 @@ const colonyEl = document.querySelector('#colony-count');
       guard.angle += angleDelta(guard.angle, desired) * Math.min(1, dt * 6);
       const goalDistance = Math.hypot(goalX - guard.x, goalY - guard.y);
       const landed = arrival > 0 && goalDistance < arrival && Math.hypot(guard.vx, guard.vy) < 70;
+      const guardWeb = landed ? null : tangledInWeb(guard);
+      guard.tangled = Boolean(guardWeb);
       guard.sheltered = landed;
       guard.landScale += ((landed ? .68 : 1) - guard.landScale) * (1 - Math.exp(-10 * dt));
       if (landed) {
@@ -712,6 +714,11 @@ const colonyEl = document.querySelector('#colony-count');
         } else if (targetKind === 'hive' && guard.actionTime >= .75) {
           guard.nectar = 0; helperDeposits++; guard.actionTime = 0; burst(0, 0, '#8ee6e9', 7, 70);
         }
+      } else if (guardWeb) {
+        guard.actionTime = 0;
+        const away = Math.atan2(guard.y - guardWeb.y, guard.x - guardWeb.x);
+        guard.vx += Math.cos(away) * 40 * dt; guard.vy += Math.sin(away) * 40 * dt;
+        guard.vx *= Math.pow(.06, dt); guard.vy *= Math.pow(.06, dt);
       } else {
         guard.actionTime = 0;
         const ease = arrival > 0 ? Math.min(1, goalDistance / (arrival * 3)) : 1;
