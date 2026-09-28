@@ -479,6 +479,12 @@ const colonyEl = document.querySelector('#colony-count');
     return false;
   }
 
+  function waspAttackDamage(wasp, target) {
+    const towardTargetX = target.x - wasp.x, towardTargetY = target.y - wasp.y;
+    const forwardDot = towardTargetX * Math.cos(wasp.angle) + towardTargetY * Math.sin(wasp.angle);
+    return forwardDot >= 0 ? 1 : 2;
+  }
+
   function edgePressure(value, size, zone, inset) {
     const ramp = Math.max(1, zone - inset);
     if (value < zone) return -clamp((zone - value) / ramp, 0, 1);
@@ -790,7 +796,7 @@ const colonyEl = document.querySelector('#colony-count');
       else { wasp.vx *= Math.pow(.14, dt); wasp.vy *= Math.pow(.14, dt); }
       wasp.x += wasp.vx * dt; wasp.y += wasp.vy * dt;
       resolveObstacles(wasp);
-      resolveEnemyContact(wasp, state.wasps, 1);
+      resolveEnemyContact(wasp, state.wasps, waspAttackDamage(wasp, state.bee));
     }
 
     for (const dragon of state.dragonflies) {
@@ -1005,7 +1011,8 @@ const colonyEl = document.querySelector('#colony-count');
           }
           burst((guard.x + target.x) / 2, (guard.y + target.y) / 2, colony.palette.accent, 10, 110); soundHit();
         } else if (target !== state.bee && distance(guard, target) < guard.radius + target.radius + 3) {
-          guard.attackCooldown = .72; guard.health--; guard.hit = .22;
+          const contactDamage = target.species === 'wasp' ? waspAttackDamage(target, guard) : 1;
+          guard.attackCooldown = .72; guard.health -= contactDamage; guard.hit = .22;
           burst(guard.x, guard.y, colony.palette.accent, 10, 110); soundHit();
           if (guard.health <= 0) killGuard(guard);
         }
@@ -1313,6 +1320,9 @@ const colonyEl = document.querySelector('#colony-count');
     ctx.fillStyle = '#29201a'; ctx.beginPath(); ctx.moveTo(0, 68); ctx.lineTo(-4, 44); ctx.lineTo(4, 44); ctx.closePath(); ctx.fill();
     ctx.strokeStyle = '#29201a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-5, -21); ctx.lineTo(-14, -30); ctx.moveTo(5, -21); ctx.lineTo(14, -30); ctx.stroke();
     ctx.fillStyle = '#d94731'; ctx.beginPath(); ctx.ellipse(-4, -17, 2.8, 4, 0, 0, TAU); ctx.ellipse(4, -17, 2.8, 4, 0, 0, TAU); ctx.fill();
+    ctx.strokeStyle = '#29201a'; ctx.lineWidth = 2.5; ctx.beginPath();
+    ctx.moveTo(-5, -22); ctx.quadraticCurveTo(-12, -27, -8, -33);
+    ctx.moveTo(5, -22); ctx.quadraticCurveTo(12, -27, 8, -33); ctx.stroke();
     ctx.restore();
   }
 
@@ -1515,7 +1525,7 @@ const colonyEl = document.querySelector('#colony-count');
   resize(); beginDemo();
   window.__BEE_DEBUG__ = {
     state, beginGame, beginDemo, updateDemoAI, toggleLandingMode, bankNectar, bankColonyNectar,
-    rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, nextDay,
+    rewardColony, maybeLaunchQueen, foundColony, spawnWasp, spawnDragonfly, waspAttackDamage, nextDay,
     landingCandidate, update, TUNING
   };
   requestAnimationFrame(frame);

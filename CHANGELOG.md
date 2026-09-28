@@ -5,6 +5,15 @@ All notable changes to Bee are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.12.1] - 2026-09-28
+
+### Changed
+
+- Wasp contact damage is now directional. A frontal bite deals one damage,
+  matching a bee sting, while the rear stinger deals two damage to the player
+  or helper bees.
+- Wasps now have visible frontal mandibles to make their attacking end clearer.
+
 ## [0.12.0] - 2026-09-28
 
 ### Added
